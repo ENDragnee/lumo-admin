@@ -34,9 +34,6 @@ export const typeDefs = `#graphql
     averageUserProgress: StatValue!
   }
 
-  # ==========================================================
-  # ✨ FIX: The missing 'ActivityContent' type definition is added here.
-  # ==========================================================
   # A simplified representation of a content module for the activity feed.
   type ActivityContent {
     id: ID!
@@ -51,6 +48,37 @@ export const typeDefs = `#graphql
     user: User!
     content: ActivityContent! # Now this type is correctly defined
   }
+  # Represents a detailed content module for the data table and organize page
+  type ContentModule {
+    id: ID!
+    title: String!
+    description: String
+    status: String! # "Published" or "Draft"
+    creationDate: String! # ISO Date
+    engagementRate: Float!
+    category: [String!]!
+    author: User
+    enrolledUsers: Int!
+    order: Int!
+  }
+
+  # Represents the aggregate stats for the content page
+  type ContentStats {
+    totalContent: Int!
+    publishedCount: Int!
+    averageEngagement: Float!
+  }
+
+  # Input type for creating a new content module
+  input CreateContentInput {
+    title: String!
+  }
+  
+  # Input type for updating the order of modules
+  input UpdateOrderInput {
+    id: ID!
+    order: Int!
+  }
 
   type Query {
     # Fetches the details of the currently logged-in user
@@ -64,11 +92,15 @@ export const typeDefs = `#graphql
     
     # Fetches the most recent interactions for the institution.
     getRecentActivity(limit: Int): [ActivityItem!]!
+    getContentModules: [ContentModule!]!
+    getContentStats: ContentStats!
   }
 
   # Defines all the mutations (write operations) available
   type Mutation {
     # Example mutation: update the logged-in user's profile
-    updateUserProfile(name: String, bio: String): User
+    createContentModule(input: CreateContentInput!): ContentModule!
+    updateContentOrder(orderedIds: [ID!]!): Boolean!
+    deleteContentModules(ids: [ID!]!): Boolean!
   }
 `;

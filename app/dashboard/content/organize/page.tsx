@@ -1,116 +1,161 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion } from "framer-motion"
-import { CourseBuilder } from "@/components/course-builder"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { gql, request } from "graphql-request"
+import { CourseBuilder, Module as CourseBuilderModule } from "@/components/course-builder"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Save } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
+import { ArrowLeft, Save, Loader2, BookOpen, TrendingUp, Users } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
-interface Module {
-  id: string
-  title: string
-  description?: string
-  duration?: number // in minutes
-  enrolledUsers?: number
-  status: "draft" | "published" | "archived"
-  order: number
+// Type Definitions
+type ModuleData = CourseBuilderModule; 
+
+interface OrganizeDataResponse {
+  getContentModules: ModuleData[];
 }
 
-// Sample module data
-const initialModules: Module[] = [
-  {
-    id: "1",
-    title: "Introduction to Tax Compliance",
-    description: "Basic overview of tax compliance requirements",
-    duration: 45,
-    enrolledUsers: 234,
-    status: "published",
-    order: 0,
-  },
-  {
-    id: "2",
-    title: "Business Registration Fundamentals",
-    description: "Step-by-step guide to business registration",
-    duration: 60,
-    enrolledUsers: 189,
-    status: "published",
-    order: 1,
-  },
-  {
-    id: "3",
-    title: "VAT Implementation Guide",
-    description: "Comprehensive VAT implementation strategies",
-    duration: 90,
-    enrolledUsers: 456,
-    status: "draft",
-    order: 2,
-  },
-  {
-    id: "4",
-    title: "Digital Services Tax Overview",
-    description: "Understanding digital services taxation",
-    duration: 30,
-    enrolledUsers: 123,
-    status: "published",
-    order: 3,
-  },
-]
+// GraphQL Queries and Mutations (no changes)
+const GET_MODULES_FOR_ORGANIZE = gql`
+  query GetContentModulesForOrganize {
+    getContentModules { id, title, description, status, order, enrolledUsers }
+  }
+`;
+const UPDATE_CONTENT_ORDER = gql`
+  mutation UpdateContentOrder($orderedIds: [ID!]!) {
+    updateContentOrder(orderedIds: $orderedIds)
+  }
+`;
+const GQL_API_ENDPOINT = `${process.env.NEXT_PUBLIC_APP_URL}/api/graphql`;
+
+// Fetcher function (no changes)
+const fetchOrganizeModules = async (): Promise<OrganizeDataResponse> => {
+  return request(GQL_API_ENDPOINT, GET_MODULES_FOR_ORGANIZE);
+};
 
 export default function OrganizeContentPage() {
-  const [modules, setModules] = useState(initialModules)
-  const [hasChanges, setHasChanges] = useState(false)
+  const [modules, setModules] = useState<ModuleData[]>([]);
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const router = useRouter();
 
-  const handleReorder = (newOrder: Module[]) => {
-    setModules(newOrder)
-    setHasChanges(true)
-  }
+  // Fetch initial data using React Query (no changes)
+  const { data, isLoading, isError, error } = useQuery<OrganizeDataResponse>({
+    queryKey: ['organizeContent'],
+    queryFn: fetchOrganizeModules,
+  });
 
-  const handleAddModule = () => {
-    const newModule: Module = {
-      id: `new-${Date.now()}`,
-      title: "New Module",
-      description: "Module description",
-      duration: 30,
-      enrolledUsers: 0,
-      status: "draft",
-      order: modules.length,
+  // ==========================================================
+  // ✨ FIX: Implement Optimistic UI Update in the mutation
+  // ==========================================================
+  const updateOrderMutation = useMutation({
+    mutationFn: (orderedIds: string[]) => request(GQL_API_ENDPOINT, UPDATE_CONTENT_ORDER, { orderedIds }),
+    
+    // 1. onMutate is called BEFORE the mutation runs.
+    onMutate: async (newOrderedIds: string[]) => {
+      // Cancel any outgoing refetches so they don't overwrite our optimistic update
+      await queryClient.cancelQueries({ queryKey: ['organizeContent'] });
+
+      // Snapshot the previous value
+      const previousModules = queryClient.getQueryData<OrganizeDataResponse>(['organizeContent']);
+      
+      // Manually create the new state based on the reordered modules array
+      const newOptimisticData = {
+        getContentModules: modules.map((module, index) => ({
+          ...module,
+          order: index, // Ensure the order property is also updated
+        })),
+      };
+
+      // Optimistically update to the new value in the React Query cache
+      queryClient.setQueryData<OrganizeDataResponse>(['organizeContent'], newOptimisticData);
+
+      // Return a context object with the snapshotted value
+      return { previousModules };
+    },
+    
+    // 2. onError is called if the mutation fails.
+    onError: (err, newOrderedIds, context) => {
+      const errorMessage = (err as any).response?.errors?.[0]?.message || "An unknown error occurred.";
+      toast({ title: "Error", description: `Failed to save order: ${errorMessage}`, variant: "destructive" });
+      
+      // Rollback to the previous value if the mutation fails
+      if (context?.previousModules) {
+        queryClient.setQueryData<OrganizeDataResponse>(['organizeContent'], context.previousModules);
+      }
+    },
+    
+    // 3. onSettled is always called after the mutation is done (success or error).
+    onSettled: () => {
+      // Invalidate the query to ensure we have the freshest data from the server.
+      queryClient.invalidateQueries({ queryKey: ['organizeContent'] });
+    },
+  });
+
+  // ✨ FIX: useEffect now simply syncs the local state with the React Query cache.
+  // This is much more reliable and removes the need for `hasChanges`.
+  useEffect(() => {
+    if (data?.getContentModules) {
+      setModules(data.getContentModules);
     }
-    setModules([...modules, newModule])
-    setHasChanges(true)
-  }
+  }, [data]);
 
-  const handleEditModule = (moduleId: string) => {
-    console.log("Edit module:", moduleId)
-    // Navigate to edit page or open modal
-  }
+  // Handler for when the user reorders items in the CourseBuilder
+  const handleReorder = (newOrder: ModuleData[]) => {
+    // Immediately update the local state for a snappy UI response
+    setModules(newOrder);
+  };
 
-  const handleDeleteModule = (moduleId: string) => {
-    setModules(modules.filter((m) => m.id !== moduleId))
-    setHasChanges(true)
-  }
-
+  // Handler for the save button
   const handleSave = () => {
-    console.log("Saving module order:", modules)
-    setHasChanges(false)
-    // Save to API
+    // The "Save" button is now only enabled if the local state differs from the cached state.
+    const orderedIds = modules.map(m => m.id);
+    updateOrderMutation.mutate(orderedIds);
+  };
+  
+  // Handlers for now, to be implemented with mutations
+  const handleAddModule = () => toast({ title: "Info", description: "Create new modules from the main Content Management page." });
+  const handleDeleteModule = (moduleId: string) => toast({ title: "Info", description: `Delete module ${moduleId} from the main Content Management page.` });
+
+  // Determine if there are changes by comparing local state to cached data
+  const hasUnsavedChanges = JSON.stringify(modules.map(m => m.id)) !== JSON.stringify(data?.getContentModules.map(m => m.id) ?? []);
+
+  // Render loading state
+  if (isLoading) {
+    return (
+      <div className="p-6 flex justify-center items-center min-h-screen">
+        <Loader2 className="h-10 w-10 animate-spin text-blue-600" />
+      </div>
+    );
   }
+
+  // Render error state
+  if (isError) {
+    return (
+      <div className="p-6 text-center text-red-500">
+        <p>Failed to load module data.</p>
+        <p className="text-sm">{(error as Error)?.message}</p>
+      </div>
+    );
+  }
+
+  const overviewStats = {
+    totalModules: modules.length,
+    published: modules.filter(m => m.status === 'Published').length,
+    totalDuration: modules.reduce((acc, m) => acc + (m.duration || 0), 0),
+    totalEnrolled: modules.reduce((acc, m) => acc + (m.enrolledUsers || 0), 0),
+  };
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between"
-      >
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" asChild>
-            <Link href="/dashboard/content">
-              <ArrowLeft className="w-4 h-4 mr-2" />
-              Back to Content
-            </Link>
+            <Link href="/dashboard/content"><ArrowLeft className="w-4 h-4 mr-2" /> Back to Content</Link>
           </Button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Organize Course Modules</h1>
@@ -118,15 +163,14 @@ export default function OrganizeContentPage() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {hasChanges && <span className="text-sm text-orange-600 font-medium">Unsaved changes</span>}
-          <Button onClick={handleSave} disabled={!hasChanges}>
-            <Save className="w-4 h-4 mr-2" />
+          {hasUnsavedChanges && <span className="text-sm text-orange-600 font-medium animate-pulse">Unsaved changes</span>}
+          <Button onClick={handleSave} disabled={!hasUnsavedChanges || updateOrderMutation.isPending}>
+            {updateOrderMutation.isPending ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
             Save Order
           </Button>
         </div>
       </motion.div>
 
-      {/* Course Overview */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         <Card>
           <CardHeader>
@@ -135,40 +179,21 @@ export default function OrganizeContentPage() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">{modules.length}</div>
-                <p className="text-sm text-gray-600">Total Modules</p>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {modules.filter((m) => m.status === "published").length}
-                </div>
-                <p className="text-sm text-gray-600">Published</p>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-orange-600">
-                  {modules.reduce((acc, m) => acc + (m.duration || 0), 0)} min
-                </div>
-                <p className="text-sm text-gray-600">Total Duration</p>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">
-                  {modules.reduce((acc, m) => acc + (m.enrolledUsers || 0), 0)}
-                </div>
-                <p className="text-sm text-gray-600">Total Enrolled</p>
-              </div>
+              <div className="text-center p-2 rounded-lg bg-gray-50"><div className="text-2xl font-bold text-blue-600">{overviewStats.totalModules}</div><p className="text-sm text-gray-600">Total Modules</p></div>
+              <div className="text-center p-2 rounded-lg bg-gray-50"><div className="text-2xl font-bold text-green-600">{overviewStats.published}</div><p className="text-sm text-gray-600">Published</p></div>
+              <div className="text-center p-2 rounded-lg bg-gray-50"><div className="text-2xl font-bold text-orange-600">{overviewStats.totalDuration} min</div><p className="text-sm text-gray-600">Total Duration</p></div>
+              <div className="text-center p-2 rounded-lg bg-gray-50"><div className="text-2xl font-bold text-purple-600">{overviewStats.totalEnrolled.toLocaleString()}</div><p className="text-sm text-gray-600">Total Completions</p></div>
             </div>
           </CardContent>
         </Card>
       </motion.div>
 
-      {/* Course Builder */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <CourseBuilder
           modules={modules}
           onReorder={handleReorder}
           onAddModule={handleAddModule}
-          onEditModule={handleEditModule}
+          onEditModule={(id) => { router.push(`/dashboard/content/${id}/edit`) }}
           onDeleteModule={handleDeleteModule}
         />
       </motion.div>

@@ -10,6 +10,7 @@ import InstitutionMember from '@/models/InstitutionMember';
 import Content from '@/models/Content';
 import Performance from '@/models/Performance';
 import Interaction from '@/models/Interaction';
+import { warn } from 'console';
 interface ContextValue {
   session?: Session | null;
 }
@@ -153,6 +154,7 @@ export const resolvers = {
         averageUserProgress: averageUserProgressStat,
       };
     },
+
     getRecentActivity: async (_: any, { limit = 5 }: { limit?: number }, context: ContextValue) => {
       await connectDB();
       const institutionId = getInstitutionIdFromContext(context);
@@ -191,9 +193,130 @@ export const resolvers = {
         };
       }).filter(Boolean); // Filter out any null entries from failed populations
     },
+    
+    getContentStats: async (_: any, __: any, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      const totalContent = await Content.countDocuments({ institutionId, isTrash: false });
+      const publishedCount = await Content.countDocuments({ institutionId, isTrash: false, isDraft: false });
+
+      const engagementAgg = await Performance.aggregate([
+        {
+          $lookup: {
+            from: 'contents', localField: 'contentId', foreignField: '_id', as: 'contentDoc'
+          }
+        },
+        { $unwind: '$contentDoc' },
+        { $match: { 'contentDoc.institutionId': institutionId } },
+        {
+          $group: {
+            _id: null,
+            averageEngagement: { $avg: '$understandingScore' }
+          }
+        }
+      ]);
+      const averageEngagement = engagementAgg[0]?.averageEngagement || 0;
+
+      return {
+        totalContent,
+        publishedCount,
+        averageEngagement: parseFloat(averageEngagement.toFixed(2)),
+      };
+    },
+
+    getContentModules: async (_: any, __: any, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+      
+      const totalMembers = await InstitutionMember.countDocuments({ institutionId, status: 'active' });
+
+      const modules = await Content.find({ institutionId, isTrash: false })
+        .sort({ order: 'asc' })
+        .populate('createdBy', 'name')
+        .lean();
+
+      return modules.map(module => {
+        const completions = module.userEngagement?.completions || 0;
+        const engagementRate = totalMembers > 0 ? (completions / totalMembers) * 100 : 0;
+
+        return {
+          id: module._id,
+          title: module.title,
+          description: module.description || '',
+          status: module.isDraft ? "Draft" : "Published",
+          creationDate: (module.createdAt as Date).toISOString(),
+          engagementRate: parseFloat(engagementRate.toFixed(2)),
+          category: module.tags,
+          author: module.createdBy,
+          enrolledUsers: completions, // Simplified to users who completed
+          order: module.order,
+        };
+      });
+    },
   },
 
   Mutation: {
     // Your future mutations will go here. For now, it's empty.
+    createContentModule: async (_:any, { input }: { input: { title: string } }, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+      const userId = new Types.ObjectId(context.session?.user?.id);
+
+      // Find the highest current order number to place the new module at the end
+      const highestOrderContent = await Content.findOne({ institutionId }).sort({ order: -1 });
+      const newOrder = (highestOrderContent?.order || -1) + 1;
+
+      const newContent = new Content({
+        title: input.title,
+        institutionId,
+        createdBy: userId,
+        isDraft: true,
+        order: newOrder,
+      });
+
+      await newContent.save();
+      
+      // We need to return the data in the shape of ContentModule
+      return {
+        id: newContent._id,
+        title: newContent.title,
+        status: "Draft",
+        creationDate: newContent.createdAt.toISOString(),
+        engagementRate: 0,
+        category: [],
+        author: { id: userId, name: context.session?.user?.name || '' },
+        enrolledUsers: 0,
+        order: newContent.order,
+      };
+    },
+
+    deleteContentModules: async (_:any, { ids }: { ids: string[] }, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      const result = await Content.updateMany(
+        { _id: { $in: ids }, institutionId }, // Security check
+        { $set: { isTrash: true } }
+      );
+      
+      return result.modifiedCount > 0;
+    },
+    
+    updateContentOrder: async (_:any, { orderedIds }: { orderedIds: string[] }, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+      
+      const updates = orderedIds.map((id, index) => 
+        Content.updateOne(
+          { _id: id, institutionId }, // Security check
+          { $set: { order: index } }
+        )
+      );
+      
+      await Promise.all(updates);
+
+      return true;
+    },
   },
 };

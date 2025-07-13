@@ -1,5 +1,6 @@
 // models/Content.ts
 import mongoose, { Document, Model, Types } from 'mongoose';
+
 export type ContentType = 'static' | 'dynamic';
 
 export interface IContent extends Document {
@@ -26,24 +27,26 @@ export interface IContent extends Document {
   parentId: Types.ObjectId | null;
   isDraft: boolean;
   isTrash: boolean;
-  version: number; // The versioning field
-  institutionId?: Types.ObjectId; // For B2B model
+  version: number;
+  institutionId?: Types.ObjectId;
+  order: number; // ✨ CHANGED: Changed from an object to a simple number for easy sorting.
 }
-const defaultData = `'{\"ROOT\":{\"type\":{\"resolvedName\":\"renderCanvas\"},\"isCanvas\":true,\"props\":{\"gap\":8,\"padding\":16},\"displayName\":\"Canvas\",\"custom\":{},\"hidden\":false,\"nodes\":[],\"linkedNodes\":{}}}'
-`
+
+const defaultData = `'{\"ROOT\":{\"type\":{\"resolvedName\":\"renderCanvas\"},\"isCanvas\":true,\"props\":{\"gap\":8,\"padding\":16},\"displayName\":\"Canvas\",\"custom\":{},\"hidden\":false,\"nodes\":[],\"linkedNodes\":{}}}'`;
+
 const ContentSchema = new mongoose.Schema<IContent>({
   title: { type: String, required: true },
   views: { type: Number, default: 0 },
   thumbnail: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: "Media",
-    required: true 
+    required: false // Note: Changed to false as sample data may not have it. Set to true if always required.
   },
   contentType: {
     type: String,
     enum: ['static', 'dynamic'],
     required: true,
-    default: 'dynamic' // Default to 'static' for your current needs
+    default: 'dynamic'
   },
   data: {
     type: String,
@@ -60,12 +63,13 @@ const ContentSchema = new mongoose.Schema<IContent>({
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
+    ref: 'User', // ✨ ADDED: Add ref for population
     required: true
   },
   parentId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Book', // Points to the parent Book document
-    default: null // null means it's in the root directory for the user
+    ref: 'Book',
+    default: null
   },
   tags: {
     type: [String],
@@ -91,11 +95,16 @@ const ContentSchema = new mongoose.Schema<IContent>({
     type: Number,
     default: 1
   },
-  institutionId: { // This links to your new Institution model
+  institutionId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Institution',
-    required: false // Optional, for content not tied to an institution
+    required: false
   },
+  // ✨ CHANGED: Simple numeric order field.
+  order: {
+    type: Number,
+    default: 0
+  }
 });
 
 const Content: Model<IContent> = 
