@@ -1,15 +1,74 @@
 "use client"
 
+import { useState } from "react";
 import { motion } from "framer-motion"
+import { signIn } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { BookOpen, Shield, ArrowLeft } from "lucide-react"
+import { BookOpen, Shield, ArrowLeft, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { useToast } from "@/components/ui/use-toast"; // You'll need to have this component from shadcn/ui
 
 export default function LoginPage() {
+  const router = useRouter();
+  const { toast } = useToast();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Use the 'signIn' function from next-auth/react.
+      // We set 'redirect: false' to handle the result manually in our code.
+      const result = await signIn("credentials", {
+        redirect: false,
+        email,
+        password,
+      });
+
+      if (result?.error) {
+        // The error message from our 'authorize' function in auth.ts will be here.
+        const errorMessage = result.error === "CredentialsSignin" ? "Invalid email or password." : result.error;
+        setError(errorMessage);
+        toast({
+          title: "Login Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        setIsLoading(false);
+      } else if (result?.ok) {
+        // Login was successful.
+        toast({
+          title: "Login Successful!",
+          description: "Redirecting to your dashboard...",
+        });
+        // Redirect to the main admin dashboard after a successful login.
+        router.push("/dashboard");
+        router.refresh(); // Recommended to ensure server session is up-to-date
+      }
+    } catch (err) {
+      console.error("Login submission error:", err);
+      const errorMessage = "An unexpected error occurred. Please try again.";
+      setError(errorMessage);
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+      setIsLoading(false);
+    }
+  };
+
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-gray-50 flex items-center justify-center p-4">
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
@@ -92,7 +151,7 @@ export default function LoginPage() {
             </CardHeader>
 
             <CardContent className="space-y-6">
-              <form className="space-y-4">
+              <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="email" className="text-sm font-medium text-gray-700">
                     Email Address
@@ -103,6 +162,9 @@ export default function LoginPage() {
                     placeholder="admin@institution.gov"
                     className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                     required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={isLoading}
                   />
                 </div>
 
@@ -116,12 +178,15 @@ export default function LoginPage() {
                     placeholder="Enter your password"
                     className="h-11 border-gray-300 focus:border-blue-500 focus:ring-blue-500"
                     required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={isLoading}
                   />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <Checkbox id="remember" />
+                    <Checkbox id="remember" disabled={isLoading} />
                     <Label htmlFor="remember" className="text-sm text-gray-600">
                       Remember me
                     </Label>
@@ -133,9 +198,11 @@ export default function LoginPage() {
 
                 <Button
                   type="submit"
-                  className="w-full h-11 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-medium"
+                  className="w-full h-11 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-medium flex items-center justify-center gap-2"
+                  disabled={isLoading}
                 >
-                  Sign In to Portal
+                  {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {isLoading ? "Signing In..." : "Sign In to Portal"}
                 </Button>
               </form>
 
@@ -148,9 +215,9 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <Button variant="outline" className="w-full h-11 border-gray-300 hover:bg-gray-50 bg-transparent">
+              <Button variant="outline" className="w-full h-11 border-gray-300 hover:bg-gray-50 bg-transparent" onClick={() => signIn('google', { callbackUrl: '/dashboard'})} disabled={isLoading}>
                 <Shield className="w-4 h-4 mr-2" />
-                Single Sign-On (SSO)
+                Single Sign-On (Google)
               </Button>
 
               <div className="text-center text-sm text-gray-600">

@@ -1,49 +1,128 @@
 "use client"
 
 import { motion } from "framer-motion"
+import { useQuery } from "@tanstack/react-query";
+import { gql, request } from "graphql-request";
+import { useSession } from "next-auth/react";
 import { StatsCard } from "@/components/stats-card"
 import { ActivityFeed } from "@/components/activity-feed"
 import { QuickActions } from "@/components/quick-actions"
-import { Users, UserCheck, BookOpen, TrendingUp, Bell } from "lucide-react"
+import { Users, UserCheck, BookOpen, TrendingUp, Bell, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 
-const statsData = [
-  {
-    title: "Total Enrolled Users",
-    value: 2847,
-    change: { value: 12, type: "increase" as const },
-    icon: Users,
-    description: "from last month",
-    trend: { value: 12, direction: "up" as const },
-  },
-  {
-    title: "Pending Registrations",
-    value: 23,
-    change: { value: 8, type: "increase" as const },
-    icon: UserCheck,
-    description: "awaiting approval",
-    trend: { value: 8, direction: "up" as const },
-  },
-  {
-    title: "Published Content Modules",
-    value: 156,
-    change: { value: 5, type: "increase" as const },
-    icon: BookOpen,
-    description: "active modules",
-    trend: { value: 5, direction: "up" as const },
-  },
-  {
-    title: "Average User Progress",
-    value: "78%", // This is a string, which caused the previous error
-    change: { value: 3, type: "increase" as const },
-    icon: TrendingUp,
-    description: "completion rate",
-    trend: { value: 3, direction: "up" as const },
-  },
-]
+// Type definitions (no changes needed)
+interface StatValue {
+  value: string;
+  change: number | null;
+}
+interface DashboardStatsData {
+  getDashboardStats: {
+    totalEnrolledUsers: StatValue;
+    pendingRegistrations: StatValue;
+    publishedContentModules: StatValue;
+    averageUserProgress: StatValue;
+  };
+}
+
+const GET_DASHBOARD_STATS = gql`
+  query GetDashboardStats {
+    getDashboardStats {
+      totalEnrolledUsers {
+        value
+        change
+      }
+      pendingRegistrations {
+        value
+        change
+      }
+      publishedContentModules {
+        value
+        change
+      }
+      averageUserProgress {
+        value
+        change
+      }
+    }
+  }
+`;
+
+// Absolute URL for the API endpoint (no changes needed)
+const GQL_API_ENDPOINT = `${process.env.NEXT_PUBLIC_APP_URL}/api/graphql`;
+
+// 2. Fetcher function (no changes needed)
+const fetchDashboardStats = async (): Promise<DashboardStatsData> => {
+  return request<DashboardStatsData>(GQL_API_ENDPOINT, GET_DASHBOARD_STATS);
+};
 
 export default function DashboardPage() {
+  const { data: session } = useSession();
+
+  const { data, isLoading, isError, error } = useQuery<DashboardStatsData>({
+    queryKey: ['dashboardStats'],
+    queryFn: fetchDashboardStats,
+  });
+
+  // The rest of your component is correct and does not need changes.
+  const statsData = data ? [
+    {
+      title: "Total Enrolled Users",
+      value: data.getDashboardStats.totalEnrolledUsers.value,
+      change: { value: data.getDashboardStats.totalEnrolledUsers.change ?? 0, type: "increase" as const },
+      icon: Users,
+      description: "active members",
+      trend: { value: data.getDashboardStats.totalEnrolledUsers.change ?? 0, direction: "up" as const },
+    },
+    {
+      title: "Pending Registrations",
+      value: data.getDashboardStats.pendingRegistrations.value,
+      change: { value: data.getDashboardStats.pendingRegistrations.change ?? 0, type: "increase" as const },
+      icon: UserCheck,
+      description: "awaiting approval",
+      trend: { value: data.getDashboardStats.pendingRegistrations.change ?? 0, direction: "up" as const },
+    },
+    {
+      title: "Published Content Modules",
+      value: data.getDashboardStats.publishedContentModules.value,
+      change: { value: data.getDashboardStats.publishedContentModules.change ?? 0, type: "increase" as const },
+      icon: BookOpen,
+      description: "active modules",
+      trend: { value: data.getDashboardStats.publishedContentModules.change ?? 0, direction: "up" as const },
+    },
+    {
+      title: "Average User Progress",
+      value: data.getDashboardStats.averageUserProgress.value,
+      change: { value: data.getDashboardStats.averageUserProgress.change ?? 0, type: "increase" as const },
+      icon: TrendingUp,
+      description: "completion rate",
+      trend: { value: data.getDashboardStats.averageUserProgress.change ?? 0, direction: "up" as const },
+    },
+  ] : [];
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-6">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="w-12 h-12 animate-spin text-blue-600" />
+          <p className="text-lg text-gray-700">Loading Dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-6">
+        <div className="p-6 text-red-800 bg-red-100 border-l-4 border-red-600 rounded-md">
+          <p className="font-bold">Failed to Load Dashboard</p>
+          <p className="mt-2">There was an error fetching the required data. Please try refreshing the page.</p>
+          <p className="mt-1 text-sm text-red-700">Error: {error instanceof Error ? error.message : "An unknown error occurred"}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -55,7 +134,7 @@ export default function DashboardPage() {
       >
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Dashboard Overview</h1>
-          <p className="text-gray-600 mt-1">Welcome back! Here's what's happening with your institution.</p>
+          <p className="text-gray-600 mt-1">Welcome back, {session?.user?.name}! Here's what's happening with your institution.</p>
         </div>
         <div className="flex items-center gap-3">
           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
@@ -68,7 +147,7 @@ export default function DashboardPage() {
         </div>
       </motion.div>
 
-      {/* Stats Cards */}
+      {/* Stats Cards - Now populated with live data from the API */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {statsData.map((stat, index) => (
           <StatsCard

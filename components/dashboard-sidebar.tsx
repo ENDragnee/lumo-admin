@@ -24,6 +24,8 @@ import {
   SidebarTrigger,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { signIn, signOut } from "next-auth/react"
+import { Button } from "./ui/button"
 
 const navigationItems = [
   {
@@ -131,7 +133,7 @@ export function DashboardSidebar() {
               Notifications
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-600">
+            <DropdownMenuItem className="text-red-600" onClick={() => signOut()}>
               <LogOut className="w-4 h-4 mr-2" />
               Sign Out
             </DropdownMenuItem>

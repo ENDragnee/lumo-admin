@@ -149,7 +149,7 @@ export default function InstitutionalLandingPage() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            <Link href="/login">
+            <Link href="/auth/login">
               <Button className="bg-blue-600 hover:bg-blue-700 text-white">
                 Access Portal
                 <ArrowRight className="ml-2 w-4 h-4" />
@@ -313,7 +313,7 @@ export default function InstitutionalLandingPage() {
               Contact our team to discuss your institutional requirements and implementation timeline.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link href="/login">
+              <Link href="/auth/login">
                 <Button size="lg" className="bg-white text-blue-600 hover:bg-gray-100 px-8 py-4 text-lg">
                   Access Portal
                   <ArrowRight className="ml-2 w-5 h-5" />
