@@ -136,6 +136,74 @@ export const typeDefs = `#graphql
     status: String! # "active" or "revoked"
   }
 
+  # Stats for the overview cards at the top of the analytics page.
+  type AnalyticsOverviewStats {
+    averageEngagement: Float!
+    averageCompletionRate: Float!
+    activeLearners: Int!
+    averageStudyTimeHours: Float!
+  }
+
+  # Detailed performance metrics for a single content module.
+  type ContentPerformanceMetric {
+    contentId: ID!
+    title: String!
+    completionRate: Float!
+    avgTimeSpentHours: Float!
+    enrolledUsers: Int!
+    avgScore: Float!
+  }
+
+  # A segment of users grouped by performance level.
+  type UserPerformanceSegment {
+    category: String! # e.g., "High Performers"
+    count: Int!
+    percentage: Float!
+  }
+  
+  # The single, comprehensive data payload for the entire analytics page.
+  type AnalyticsPageData {
+    overviewStats: AnalyticsOverviewStats!
+    contentAnalytics: [ContentPerformanceMetric!]!
+    userAnalytics: [UserPerformanceSegment!]!
+  }
+
+  type BrandingSettings {
+    logoUrl: String
+    primaryColor: String
+    secondaryColor: String
+  }
+  
+  # Represents all editable settings for an institution
+  type SettingsData {
+    name: String!
+    description: String
+    website: String
+    contactEmail: String
+    contactPhone: String
+    address: String
+    branding: BrandingSettings!
+  }
+  
+  # Input type for updating the general and branding settings
+  input UpdateSettingsInput {
+    name: String
+    description: String
+    website: String
+    contactEmail: String
+    contactPhone: String
+    address: String
+    primaryColor: String
+    secondaryColor: String
+    # logoUrl will be handled by a separate mutation for file uploads
+  }
+  
+  # Input type for changing the user's password
+  input ChangePasswordInput {
+    currentPassword: String!
+    newPassword: String!
+  }
+
   type Query {
     # Fetches the details of the currently logged-in user
     me: User
@@ -152,6 +220,8 @@ export const typeDefs = `#graphql
     getContentStats: ContentStats!
     getUserManagementData: UserManagementPageData!
     getUserDetail(userId: ID!): UserDetail!
+    getAnalyticsData: AnalyticsPageData!
+    getSettingsData: SettingsData!
   }
 
   # Defines all the mutations (write operations) available
@@ -161,5 +231,7 @@ export const typeDefs = `#graphql
     updateContentOrder(orderedIds: [ID!]!): Boolean!
     deleteContentModules(ids: [ID!]!): Boolean!
     updateUserStatus(input: UpdateUserStatusInput!): InstitutionUser!
+    updateSettings(input: UpdateSettingsInput!): SettingsData!
+    changePassword(input: ChangePasswordInput!): Boolean!
   }
 `;

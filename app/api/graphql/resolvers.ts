@@ -5,12 +5,14 @@ import connectDB from '@/lib/mongodb';
 import User from '@/models/User';
 import Institution from '@/models/Institution';
 import { GraphQLError } from 'graphql';
+import { subDays } from 'date-fns';
 import { getServerSession, Session } from 'next-auth';
 import InstitutionMember from '@/models/InstitutionMember';
 import Content from '@/models/Content';
 import Performance from '@/models/Performance';
 import Interaction from '@/models/Interaction';
-import { warn } from 'console';
+import { hashPassword, verifyPassword } from '@/lib/password-utils'; // You'll need these utils
+
 interface ContextValue {
   session?: Session | null;
 }
@@ -374,6 +376,125 @@ export const resolvers = {
         })),
       };
     },
+    getAnalyticsData: async (_: any, __: any, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      // --- 1. Fetch Core Data Concurrently ---
+      const [allMembers, allContent, allPerformances, activeLearnerIds] = await Promise.all([
+        InstitutionMember.find({ institutionId, status: 'active' }).lean(),
+        Content.find({ institutionId, isTrash: false }).lean(),
+        Performance.find({}).populate({ path: 'contentId', match: { institutionId } }).lean(),
+        Interaction.distinct('userId', { timestamp: { $gte: subDays(new Date(), 30) } })
+      ]);
+      
+      // Filter performances to only those whose content belongs to the institution
+      const institutionPerformances = allPerformances.filter(p => p.contentId);
+      const totalActiveUsers = allMembers.length;
+
+      // --- 2. Calculate Overview Stats ---
+      const totalEngagement = institutionPerformances.length > 0
+        ? institutionPerformances.reduce((sum, p) => sum + p.understandingScore, 0) / institutionPerformances.length
+        : 0;
+      
+      const totalTime = institutionPerformances.reduce((sum, p) => sum + p.totalTimeSeconds, 0);
+      const avgStudyTimeHours = institutionPerformances.length > 0 ? (totalTime / institutionPerformances.length) / 3600 : 0;
+      
+      const completedPerformances = institutionPerformances.filter(p => p.understandingLevel === 'mastered').length;
+      const avgCompletionRate = institutionPerformances.length > 0 ? (completedPerformances / institutionPerformances.length) * 100 : 0;
+      
+      const overviewStats = {
+        averageEngagement: totalEngagement,
+        averageCompletionRate: avgCompletionRate,
+        activeLearners: activeLearnerIds.length,
+        averageStudyTimeHours: avgStudyTimeHours,
+      };
+
+      // --- 3. Calculate Content-Specific Analytics ---
+      const contentAnalyticsMap = new Map();
+      for (const content of allContent) {
+        contentAnalyticsMap.set(content._id.toString(), {
+          contentId: content._id.toString(),
+          title: content.title,
+          performances: [],
+        });
+      }
+      for (const perf of institutionPerformances) {
+        const contentId = (perf.contentId as any)._id.toString();
+        if (contentAnalyticsMap.has(contentId)) {
+          contentAnalyticsMap.get(contentId).performances.push(perf);
+        }
+      }
+
+      const contentAnalytics = Array.from(contentAnalyticsMap.values()).map(data => {
+        const perfCount = data.performances.length;
+        const completions = data.performances.filter((p: any) => p.understandingLevel === 'mastered').length;
+        const totalScore = data.performances.reduce((sum: number, p: any) => sum + p.understandingScore, 0);
+        const totalTime = data.performances.reduce((sum: number, p: any) => sum + p.totalTimeSeconds, 0);
+
+        return {
+          contentId: data.contentId,
+          title: data.title,
+          enrolledUsers: perfCount,
+          completionRate: perfCount > 0 ? (completions / perfCount) * 100 : 0,
+          avgScore: perfCount > 0 ? totalScore / perfCount : 0,
+          avgTimeSpentHours: perfCount > 0 ? (totalTime / perfCount) / 3600 : 0,
+        };
+      });
+
+      // --- 4. Calculate User Segmentation ---
+      const userPerformanceMap = new Map();
+      for (const perf of institutionPerformances) {
+        const userId = perf.userId.toString();
+        if (!userPerformanceMap.has(userId)) userPerformanceMap.set(userId, { scores: [] });
+        userPerformanceMap.get(userId).scores.push(perf.understandingScore);
+      }
+      
+      let highPerformers = 0, averagePerformers = 0, strugglingUsers = 0;
+      for (const [userId, data] of userPerformanceMap.entries()) {
+        const avgScore = data.scores.reduce((a: number, b: number) => a + b, 0) / data.scores.length;
+        if (avgScore >= 85) highPerformers++;
+        else if (avgScore >= 60) averagePerformers++;
+        else strugglingUsers++;
+      }
+      
+      const engagedUserIds = new Set(Array.from(userPerformanceMap.keys()));
+      const allMemberIds = new Set(allMembers.map(m => m.userId.toString()));
+      const inactiveUsers = allMembers.filter(m => !engagedUserIds.has(m.userId.toString())).length;
+
+      const userAnalytics = [
+        { category: "High Performers", count: highPerformers, percentage: totalActiveUsers > 0 ? (highPerformers / totalActiveUsers) * 100 : 0 },
+        { category: "Average Progress", count: averagePerformers, percentage: totalActiveUsers > 0 ? (averagePerformers / totalActiveUsers) * 100 : 0 },
+        { category: "Struggling Users", count: strugglingUsers, percentage: totalActiveUsers > 0 ? (strugglingUsers / totalActiveUsers) * 100 : 0 },
+        { category: "Inactive Users", count: inactiveUsers, percentage: totalActiveUsers > 0 ? (inactiveUsers / totalActiveUsers) * 100 : 0 },
+      ];
+
+      return { overviewStats, contentAnalytics, userAnalytics };
+    },
+
+    getSettingsData: async (_: any, __: any, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      const institution = await Institution.findById(institutionId).lean();
+      if (!institution) {
+        throw new GraphQLError("Institution not found.");
+      }
+      
+      return {
+        name: institution.name,
+        description: institution.description,
+        website: institution.website,
+        contactEmail: institution.contactEmail,
+        contactPhone: institution.contactPhone,
+        address: institution.address,
+        branding: {
+          logoUrl: institution.branding.logoUrl,
+          primaryColor: institution.branding.primaryColor,
+          secondaryColor: institution.branding.secondaryColor,
+        },
+      };
+    },
   },
 
   Mutation: {
@@ -438,7 +559,7 @@ export const resolvers = {
 
       return true;
     },
-    updateUserStatus: async (_: any, { input }: { input: { userId: string, status: 'active' | 'revoked' } }, context: ContextValue) => {
+    updateUserStatus: async (_: any, { input }: { input: { userId: string, status: 'active' | 'revoked' } }, context: ContextValue) =>{
         await connectDB();
         const institutionId = getInstitutionIdFromContext(context);
         const userObjectId = new Types.ObjectId(input.userId);
@@ -469,5 +590,70 @@ export const resolvers = {
             averagePerformance: 0
         };
     },
+    updateSettings: async (_: any, { input }: { input: any }, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      // Construct the update object to avoid passing undefined fields
+      const updateData: any = {};
+      if (input.name) updateData.name = input.name;
+      if (input.description) updateData.description = input.description;
+      if (input.website) updateData.website = input.website;
+      if (input.contactEmail) updateData.contactEmail = input.contactEmail;
+      if (input.contactPhone) updateData.contactPhone = input.contactPhone;
+      if (input.address) updateData.address = input.address;
+      if (input.primaryColor) updateData['branding.primaryColor'] = input.primaryColor;
+      if (input.secondaryColor) updateData['branding.secondaryColor'] = input.secondaryColor;
+
+      const updatedInstitution = await Institution.findByIdAndUpdate(
+        institutionId,
+        { $set: updateData },
+        { new: true } // Return the updated document
+      ).lean();
+
+      if (!updatedInstitution) {
+        throw new GraphQLError("Failed to update settings.");
+      }
+      
+      // Map the result to the SettingsData type
+      return {
+        name: updatedInstitution.name,
+        description: updatedInstitution.description,
+        website: updatedInstitution.website,
+        contactEmail: updatedInstitution.contactEmail,
+        contactPhone: updatedInstitution.contactPhone,
+        address: updatedInstitution.address,
+        branding: updatedInstitution.branding,
+      };
+    },
+
+    changePassword: async (_: any, { input }: { input: { currentPassword: string, newPassword: string } }, context: ContextValue) => {
+      await connectDB();
+      if (!context.session?.user?.id) {
+        throw new GraphQLError("You must be logged in to change your password.");
+      }
+      
+      const userId = new Types.ObjectId(context.session.user.id);
+      const user = await User.findById(userId);
+
+      if (!user || !user.password_hash) {
+        throw new GraphQLError("User not found or password not set.");
+      }
+      
+      // 1. Verify the current password
+      const isPasswordValid = await verifyPassword(input.currentPassword, user.password_hash);
+      if (!isPasswordValid) {
+        throw new GraphQLError("Incorrect current password.");
+      }
+      
+      // 2. Hash the new password
+      const newHashedPassword = await hashPassword(input.newPassword);
+      
+      // 3. Update the user's password
+      user.password_hash = newHashedPassword;
+      await user.save();
+      
+      return true;
+    }
   },
 };
