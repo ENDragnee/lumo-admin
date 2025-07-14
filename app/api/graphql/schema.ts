@@ -80,6 +80,62 @@ export const typeDefs = `#graphql
     order: Int!
   }
 
+  type UserManagementStats {
+    totalUsers: Int!
+    activeUsers: Int!
+    pendingUsers: Int!
+    averagePerformance: Float!
+  }
+
+  type InstitutionUser {
+    userId: ID!
+    name: String!
+    email: String!
+    profileImage: String
+    registrationDate: String!
+    status: String! # e.g., 'active', 'pending'
+    averagePerformance: Float!
+    businessName: String
+    tin: String
+  }
+  
+  type UserManagementPageData {
+    stats: UserManagementStats!
+    users: [InstitutionUser!]!
+  }
+  
+  type UserModulePerformance { # Renamed from UserModuleProgress for clarity
+    contentId: ID!
+    title: String!
+    performanceScore: Float!
+    status: String! # e.g., 'mastered', 'good'
+    timeSpentSeconds: Int!
+  }
+  
+  type UserDetail {
+    userId: ID!
+    name: String!
+    email: String!
+    profileImage: String
+    registrationDate: String!
+    status: String!
+    businessName: String
+    tin: String
+    phone: String
+    address: String
+    overallAveragePerformance: Float!
+    totalModulesCount: Int!
+    completedModulesCount: Int!
+    totalTimeSpentSeconds: Int!
+    modulePerformance: [UserModulePerformance!]! # Updated name
+    activityTimeline: [ActivityItem!]!
+  }
+  
+  input UpdateUserStatusInput {
+    userId: ID!
+    status: String! # "active" or "revoked"
+  }
+
   type Query {
     # Fetches the details of the currently logged-in user
     me: User
@@ -94,6 +150,8 @@ export const typeDefs = `#graphql
     getRecentActivity(limit: Int): [ActivityItem!]!
     getContentModules: [ContentModule!]!
     getContentStats: ContentStats!
+    getUserManagementData: UserManagementPageData!
+    getUserDetail(userId: ID!): UserDetail!
   }
 
   # Defines all the mutations (write operations) available
@@ -102,5 +160,6 @@ export const typeDefs = `#graphql
     createContentModule(input: CreateContentInput!): ContentModule!
     updateContentOrder(orderedIds: [ID!]!): Boolean!
     deleteContentModules(ids: [ID!]!): Boolean!
+    updateUserStatus(input: UpdateUserStatusInput!): InstitutionUser!
   }
 `;

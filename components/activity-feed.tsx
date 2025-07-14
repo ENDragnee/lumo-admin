@@ -10,9 +10,6 @@ import { useQuery } from "@tanstack/react-query";
 import { gql, request } from "graphql-request";
 import { formatDistanceToNow } from 'date-fns';
 
-// ==========================================================
-// 1. Define types for the GraphQL response and the transformed data
-// ==========================================================
 interface ActivityItemFromAPI {
   id: string;
   eventType: 'start' | 'end' | 'update';

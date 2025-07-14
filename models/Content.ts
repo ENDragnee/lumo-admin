@@ -29,7 +29,7 @@ export interface IContent extends Document {
   isTrash: boolean;
   version: number;
   institutionId?: Types.ObjectId;
-  order: number; // ✨ CHANGED: Changed from an object to a simple number for easy sorting.
+  order: number; 
 }
 
 const defaultData = `'{\"ROOT\":{\"type\":{\"resolvedName\":\"renderCanvas\"},\"isCanvas\":true,\"props\":{\"gap\":8,\"padding\":16},\"displayName\":\"Canvas\",\"custom\":{},\"hidden\":false,\"nodes\":[],\"linkedNodes\":{}}}'`;

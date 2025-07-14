@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { motion } from "framer-motion"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -44,12 +43,10 @@ export function DataTable({
 
   const itemsPerPage = 10
 
-  // Filter data based on search term
   const filteredData = data.filter((item) =>
     Object.values(item).some((value) => String(value).toLowerCase().includes(searchTerm.toLowerCase())),
   )
 
-  // Sort data
   const sortedData = sortConfig
     ? [...filteredData].sort((a, b) => {
         const aValue = a[sortConfig.key]
@@ -60,9 +57,7 @@ export function DataTable({
       })
     : filteredData
 
-  // Paginate data
   const paginatedData = sortedData.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-
   const totalPages = Math.ceil(sortedData.length / itemsPerPage)
 
   const handleSort = (key: string) => {
@@ -83,14 +78,15 @@ export function DataTable({
   }
 
   const handleRowSelect = (row: any, checked: boolean) => {
-    const newSelection = checked ? [...selectedRows, row] : selectedRows.filter((r) => r.id !== row.id)
-    setSelectedRows(newSelection)
-    onRowSelect?.(newSelection)
+    // ✨ FIX: Use 'userId' or 'id' for a stable unique identifier
+    const rowId = row.userId || row.id;
+    const newSelection = checked ? [...selectedRows, row] : selectedRows.filter((r) => (r.userId || r.id) !== rowId);
+    setSelectedRows(newSelection);
+    onRowSelect?.(newSelection);
   }
 
   return (
     <div className="space-y-4">
-      {/* Search and Filter Bar */}
       {(searchable || filterable) && (
         <div className="flex items-center gap-4">
           {searchable && (
@@ -112,8 +108,7 @@ export function DataTable({
           )}
         </div>
       )}
-
-      {/* Table */}
+      
       <div className="border rounded-lg bg-white">
         <Table>
           <TableHeader>
@@ -127,11 +122,7 @@ export function DataTable({
                 </TableHead>
               )}
               {columns.map((column) => (
-                <TableHead
-                  key={column.key}
-                  className={column.sortable ? "cursor-pointer hover:bg-gray-50" : ""}
-                  onClick={() => column.sortable && handleSort(column.key)}
-                >
+                <TableHead key={column.key} className={column.sortable ? "cursor-pointer hover:bg-gray-50" : ""} onClick={() => column.sortable && handleSort(column.key)}>
                   <div className="flex items-center gap-2">
                     {column.label}
                     {column.sortable && sortConfig?.key === column.key && (
@@ -140,13 +131,14 @@ export function DataTable({
                   </div>
                 </TableHead>
               ))}
-              {actions && <TableHead className="w-12">Actions</TableHead>}
+              {actions && <TableHead className="w-12 text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
             {paginatedData.map((row, index) => (
               <motion.tr
-                key={row.id}
+                // ✨ FIX: Use 'userId' or 'id' for a stable unique key
+                key={row.userId || row.id}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: index * 0.05 }}
@@ -155,7 +147,7 @@ export function DataTable({
                 {selectable && (
                   <TableCell>
                     <Checkbox
-                      checked={selectedRows.some((r) => r.id === row.id)}
+                      checked={selectedRows.some((r) => (r.userId || r.id) === (row.userId || row.id))}
                       onCheckedChange={(checked) => handleRowSelect(row, checked as boolean)}
                     />
                   </TableCell>
@@ -166,10 +158,10 @@ export function DataTable({
                   </TableCell>
                 ))}
                 {actions && (
-                  <TableCell>
+                  <TableCell className="text-right">
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
                           <MoreHorizontal className="w-4 h-4" />
                         </Button>
                       </DropdownMenuTrigger>
@@ -183,35 +175,15 @@ export function DataTable({
         </Table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-gray-600">
-            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, sortedData.length)}{" "}
-            of {sortedData.length} results
+            Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, sortedData.length)} of {sortedData.length} results
           </p>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-              disabled={currentPage === 1}
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Previous
-            </Button>
-            <span className="text-sm text-gray-600">
-              Page {currentPage} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-              disabled={currentPage === totalPages}
-            >
-              Next
-              <ChevronRight className="w-4 h-4" />
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setCurrentPage(Math.max(1, currentPage - 1))} disabled={currentPage === 1}><ChevronLeft className="w-4 h-4 mr-1" />Previous</Button>
+            <span className="text-sm text-gray-600">Page {currentPage} of {totalPages}</span>
+            <Button variant="outline" size="sm" onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))} disabled={currentPage === totalPages}>Next<ChevronRight className="w-4 h-4 ml-1" /></Button>
           </div>
         </div>
       )}

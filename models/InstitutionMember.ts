@@ -11,6 +11,7 @@ export interface IInstitutionMember extends Document {
   status: MembershipStatus;
   joinedAt: Date;
   metadata: Record<string, any>; // Flexible metadata object
+  createdAt: Date;
 }
 
 const InstitutionMemberSchema = new Schema<IInstitutionMember>({
@@ -39,6 +40,10 @@ const InstitutionMemberSchema = new Schema<IInstitutionMember>({
   joinedAt: {
     type: Date,
     default: Date.now,
+  },
+  createdAt: {
+    type: Date,
+    default: Date.now
   },
   // Mongoose's 'Mixed' type allows for a completely flexible object.
   // It's powerful but use with caution. Perfect for your use case.

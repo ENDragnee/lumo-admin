@@ -254,6 +254,126 @@ export const resolvers = {
         };
       });
     },
+    getUserManagementData: async (_: any, __: any, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      // --- 1. Fetch User Stats ---
+      const totalUsers = await InstitutionMember.countDocuments({ institutionId });
+      const activeUsers = await InstitutionMember.countDocuments({ institutionId, status: 'active' });
+      const pendingUsers = await InstitutionMember.countDocuments({ institutionId, status: 'pending' });
+
+      // --- 2. Fetch Average Performance for ALL active users ---
+      const performanceAgg = await InstitutionMember.aggregate([
+        { $match: { institutionId, status: 'active' } },
+        {
+          $lookup: {
+            from: 'performances', localField: 'userId', foreignField: 'userId', as: 'performanceRecords'
+          }
+        },
+        { $unwind: { path: '$performanceRecords', preserveNullAndEmptyArrays: true } },
+        {
+          $group: {
+            _id: null,
+            avgPerformance: { $avg: '$performanceRecords.understandingScore' }
+          }
+        }
+      ]);
+      const averagePerformance = performanceAgg[0]?.avgPerformance || 0;
+      
+      const stats = { totalUsers, activeUsers, pendingUsers, averagePerformance };
+
+      // --- 3. Fetch Detailed User List with individual performance ---
+      const usersData = await InstitutionMember.aggregate([
+        { $match: { institutionId } },
+        { $sort: { createdAt: -1 } },
+        {
+          $lookup: { from: 'users', localField: 'userId', foreignField: '_id', as: 'userDoc' }
+        },
+        { $unwind: '$userDoc' },
+        {
+          $lookup: { from: 'performances', localField: 'userId', foreignField: 'userId', as: 'performanceRecords' }
+        },
+        {
+          $project: {
+            userId: '$userDoc._id',
+            name: '$userDoc.name',
+            email: '$userDoc.email',
+            profileImage: '$userDoc.profileImage',
+            registrationDate: '$createdAt',
+            status: '$status',
+            businessName: '$metadata.businessName', // Assuming you store this in metadata
+            tin: '$metadata.tin',
+            averagePerformance: { $avg: '$performanceRecords.understandingScore' }
+          }
+        }
+      ]);
+
+      const users = usersData.map(u => ({
+        ...u,
+        averagePerformance: u.averagePerformance || 0,
+      }));
+
+      return { stats, users };
+    },
+    
+    getUserDetail: async (_: any, { userId }: { userId: string }, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+      const userObjectId = new Types.ObjectId(userId);
+
+      // 1. Get user and membership details, ensuring user belongs to the institution
+      const member = await InstitutionMember.findOne({ userId: userObjectId, institutionId }).populate('userId').lean();
+      if (!member) throw new GraphQLError('User not found in this institution.');
+
+      // The user document is populated within the member object
+      const user = member.userId as any;
+
+      // 2. Fetch all necessary data for this user concurrently
+      const [performanceRecords, allContentCount, userInteractions] = await Promise.all([
+          Performance.find({ userId: userObjectId }).populate('contentId', 'title').lean(),
+          Content.countDocuments({ institutionId, isTrash: false }),
+          Interaction.find({ userId: userObjectId }).sort({ timestamp: -1 }).limit(10).populate('contentId', 'title').lean()
+      ]);
+      
+      // 3. Calculate aggregate stats
+      const totalTimeSpentSeconds = performanceRecords.reduce((acc, p) => acc + p.totalTimeSeconds, 0);
+      const completedModulesCount = performanceRecords.filter(p => p.understandingLevel === 'mastered').length;
+      const overallAveragePerformance = performanceRecords.length > 0
+        ? performanceRecords.reduce((acc, p) => acc + p.understandingScore, 0) / performanceRecords.length
+        : 0;
+      
+      return {
+        userId: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        profileImage: user.profileImage,
+        registrationDate: (member.createdAt as Date).toISOString(),
+        status: member.status,
+        businessName: member.metadata?.businessName || 'N/A',
+        tin: member.metadata?.tin || 'N/A',
+        phone: user.phone || 'N/A',
+        address: user.address || 'N/A',
+        overallAveragePerformance: Math.round(overallAveragePerformance),
+        totalModulesCount: allContentCount,
+        completedModulesCount,
+        totalTimeSpentSeconds,
+        modulePerformance: performanceRecords.map(p => ({
+          contentId: (p.contentId as any)?._id.toString(),
+          title: (p.contentId as any)?.title || 'Deleted Content',
+          performanceScore: p.understandingScore,
+          status: p.understandingLevel,
+          timeSpentSeconds: p.totalTimeSeconds,
+        })),
+        activityTimeline: userInteractions.map(i => ({
+          id: i._id.toString(),
+          eventType: i.eventType,
+          timestamp: (i.timestamp as Date).toISOString(),
+          user: user, // user object is already available
+          content: i.contentId,
+        })),
+      };
+    },
   },
 
   Mutation: {
@@ -317,6 +437,37 @@ export const resolvers = {
       await Promise.all(updates);
 
       return true;
+    },
+    updateUserStatus: async (_: any, { input }: { input: { userId: string, status: 'active' | 'revoked' } }, context: ContextValue) => {
+        await connectDB();
+        const institutionId = getInstitutionIdFromContext(context);
+        const userObjectId = new Types.ObjectId(input.userId);
+
+        const updatedMember = await InstitutionMember.findOneAndUpdate(
+            { userId: userObjectId, institutionId },
+            { $set: { status: input.status } },
+            { new: true } // Return the updated document
+        ).populate('userId').lean();
+        
+        if (!updatedMember) {
+            throw new GraphQLError("Failed to update user status or user not found.");
+        }
+        
+        // Return data in the shape of InstitutionUser
+        const userDoc = updatedMember.userId as any;
+        // You would need a sub-query to get average performance here for a perfect return,
+        // but for now, we'll return 0 as a placeholder.
+        return {
+            userId: userDoc._id,
+            name: userDoc.name,
+            email: userDoc.email,
+            profileImage: userDoc.profileImage,
+            registrationDate: (updatedMember.createdAt as Date).toISOString(),
+            status: updatedMember.status,
+            businessName: updatedMember.metadata?.businessName || 'N/A',
+            tin: updatedMember.metadata?.tin || 'N/A',
+            averagePerformance: 0
+        };
     },
   },
 };
