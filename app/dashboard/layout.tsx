@@ -1,6 +1,7 @@
 import type React from "react"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
-import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
+import { DashboardNavbar } from "@/components/dashboard-navbar" // ✨ NEW: Import Navbar
+import { DashboardBottomBar } from "@/components/dashboard-bottombar" // ✨ NEW: Import BottomBar
 
 export default function DashboardLayout({
   children,
@@ -8,11 +9,20 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <SidebarProvider defaultOpen={true}>
-      <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-100 dark:bg-gray-900">
+      <div className="hidden md:flex">
         <DashboardSidebar />
-        <SidebarInset>{children}</SidebarInset>
       </div>
-    </SidebarProvider>
+
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <DashboardNavbar />
+
+        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 pt-20 md:pt-6 pb-20 md:pb-6">
+          {children}
+        </main>
+      </div>
+
+      <DashboardBottomBar />
+    </div>
   )
 }

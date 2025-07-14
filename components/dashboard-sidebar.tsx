@@ -1,146 +1,69 @@
 "use client"
 
 import { motion } from "framer-motion"
+import { usePathname } from "next/navigation" // ✨ NEW: Hook to get current URL path
 import { cn } from "@/lib/utils"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Home, BookOpen, Users, BarChart3, Settings, FileText, Bell, LogOut, ChevronDown } from "lucide-react"
+import { Home, BookOpen, Users, BarChart3, Settings, FileText } from "lucide-react"
 import Link from "next/link"
-import {
-  Sidebar,
-  SidebarHeader,
-  SidebarContent,
-  SidebarFooter,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarTrigger,
-  SidebarRail,
-} from "@/components/ui/sidebar"
-import { signIn, signOut } from "next-auth/react"
-import { Button } from "./ui/button"
 
 const navigationItems = [
-  {
-    title: "Dashboard",
-    href: "/dashboard",
-    icon: Home,
-    active: true,
-  },
-  {
-    title: "Content Management",
-    href: "/dashboard/content",
-    icon: BookOpen,
-  },
-  {
-    title: "User Management",
-    href: "/dashboard/users",
-    icon: Users,
-  },
-  {
-    title: "Analytics",
-    href: "/dashboard/analytics",
-    icon: BarChart3,
-  },
-  {
-    title: "Reports",
-    href: "/dashboard/reports",
-    icon: FileText,
-  },
-  {
-    title: "Settings",
-    href: "/dashboard/settings",
-    icon: Settings,
-  },
+  { title: "Dashboard", href: "/dashboard", icon: Home },
+  { title: "Content", href: "/dashboard/content", icon: BookOpen },
+  { title: "Users", href: "/dashboard/users", icon: Users },
+  { title: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
+  { title: "Reports", href: "/dashboard/reports", icon: FileText },
+  { title: "Settings", href: "/dashboard/settings", icon: Settings },
 ]
 
 export function DashboardSidebar() {
+  const pathname = usePathname(); // ✨ Get the current path
+
   return (
-    <Sidebar>
-      <SidebarHeader>
+    <aside className="w-64 flex-col border-r bg-white dark:bg-gray-950 dark:border-gray-800 p-4 space-y-6">
+      {/* Sidebar Header */}
+      <div className="px-2">
         <Link href="/" className="flex items-center gap-3">
           <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
             <BookOpen className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h1 className="font-semibold text-gray-900">Lumo Portal</h1>
-            <p className="text-xs text-gray-500">Ministry of Revenue</p>
+            <h1 className="font-semibold text-gray-900 dark:text-gray-50">Lumo Portal</h1>
+            <p className="text-xs text-gray-500 dark:text-gray-400">Ministry of Revenue</p>
           </div>
         </Link>
-        <SidebarTrigger />
-      </SidebarHeader>
+        {/* ✨ REMOVED: The SidebarTrigger is gone */}
+      </div>
 
-      <SidebarContent>
-        <SidebarMenu>
-          {navigationItems.map((item, index) => (
-            <SidebarMenuItem key={item.href}>
-              <motion.div
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: index * 0.05 }}
+      {/* Sidebar Navigation */}
+      <nav className="flex-1 space-y-1">
+        {navigationItems.map((item, index) => {
+          // ✨ DYNAMIC ACTIVE STATE: Check if the current path starts with the item's href
+          const isActive = pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href));
+          
+          return (
+            <motion.div
+              key={item.href}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.3, delay: index * 0.05 }}
+            >
+              <Link
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-all",
+                  isActive
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-50"
+                )}
               >
-                <Link href={item.href}>
-                  <SidebarMenuButton
-                    variant={item.active ? "default" : "ghost"}
-                    className={cn(
-                      "w-full justify-start gap-3 h-10",
-                      item.active
-                        ? "bg-blue-600 text-white hover:bg-blue-700"
-                        : "text-gray-700 hover:text-gray-900 hover:bg-gray-100",
-                    )}
-                  >
-                    <item.icon className="w-4 h-4" />
-                    {item.title}
-                  </SidebarMenuButton>
-                </Link>
-              </motion.div>
-            </SidebarMenuItem>
-          ))}
-        </SidebarMenu>
-      </SidebarContent>
-
-      <SidebarFooter>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton className="w-full justify-start gap-3 h-12 p-2">
-              <Avatar className="w-8 h-8">
-                <AvatarImage src="/placeholder.svg?height=32&width=32" />
-                <AvatarFallback>AD</AvatarFallback>
-              </Avatar>
-              <div className="flex-1 text-left">
-                <p className="text-sm font-medium text-gray-900">Admin User</p>
-                <p className="text-xs text-gray-500">System Administrator</p>
-              </div>
-              <ChevronDown className="w-4 h-4 text-gray-400" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>My Account</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
-              <Settings className="w-4 h-4 mr-2" />
-              Account Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem>
-              <Bell className="w-4 h-4 mr-2" />
-              Notifications
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="text-red-600" onClick={() => signOut()}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </SidebarFooter>
-      <SidebarRail />
-    </Sidebar>
+                <item.icon className="w-4 h-4" />
+                {item.title}
+              </Link>
+            </motion.div>
+          )
+        })}
+      </nav>
+      {/* ✨ REMOVED: The entire SidebarFooter is gone */}
+    </aside>
   )
 }
