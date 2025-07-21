@@ -7,6 +7,8 @@ import { verifyPassword } from './password-utils';
 import connectDB from "@/lib/mongodb";
 import User, { IUser } from '@/models/User';
 import Institution from '@/models/Institution'; // ✨ NEW: Import Institution model
+import InstitutionMember from '@/models/InstitutionMember';
+import Invitation from '@/models/Invitation';
 import mongoose, { Types } from 'mongoose';
 
 // --- Helper Function: generateUniqueUserTag ---
@@ -42,9 +44,6 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
         clientId: process.env.GOOGLE_CLIENT_ID as string,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
-        // Note: The admin check below only applies to Credentials.
-        // You would need separate logic in the `signIn` callback for Google if you
-        // want to restrict Google sign-ins to pre-approved admins.
     }),
     CredentialsProvider({
         name: 'Credentials',
@@ -109,16 +108,80 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: 'jwt' },
 
   pages: {
-    signIn: '/login', // Redirect users to your custom login page
-    error: '/login', // Redirect users to login page on error, error message will be in URL query
+    signIn: '/auth/login', // Redirect users to your custom login page
+    error: '/auth/login', // Redirect users to login page on error, error message will be in URL query
   },
 
   callbacks: {
     // --- signIn Callback (Your existing logic) ---
     async signIn({ user, account, profile }) {
-        // Your existing signIn logic is good, no changes needed here.
-        // It handles new user creation for OAuth providers correctly.
-        return true; // Or keep your existing detailed logic
+      // Allow sign-in for credentials provider, as authorization happens in the `authorize` function.
+      if (account?.provider === 'credentials') {
+        return true;
+      }
+
+      // Handle OAuth providers (like Google)
+      if (account?.provider === 'google') {
+        try {
+          await connectDB();
+
+          // 1. Find or Create the User in your Database
+          let dbUser = await User.findOne({ email: user.email });
+
+          if (!dbUser && user.email && user.name) {
+            // User does not exist, create a new one
+            console.log(`New Google user detected: ${user.email}. Creating account.`);
+            const userTag = await generateUniqueUserTag(user.name);
+            
+            dbUser = await new User({
+              email: user.email,
+              name: user.name,
+              userTag: userTag,
+              profileImage: user.image, // from Google profile
+              provider: 'google',
+              providerAccountId: user.id, // from Google profile
+            }).save();
+          }
+
+          if (!dbUser) {
+             console.error("Failed to find or create a user for OAuth sign-in.");
+             return false; // Deny sign-in if user record is not available
+          }
+
+          // 2. Check for a Pending Invitation and Link the User
+          const pendingInvite = await Invitation.findOne({
+            email: dbUser.email,
+            status: 'pending',
+          });
+
+          if (pendingInvite) {
+            console.log(`Found pending invitation for ${dbUser.email}. Linking to institution ${pendingInvite.institutionId}`);
+            
+            // Create the official link between the user and the institution
+            await InstitutionMember.create({
+              institutionId: pendingInvite.institutionId,
+              userId: dbUser._id,
+              role: pendingInvite.role,
+              status: 'active', // User is now an active member
+            });
+
+            // Update the invitation to prevent reuse
+            pendingInvite.status = 'accepted';
+            await pendingInvite.save();
+          }
+
+          // 3. Update the NextAuth user object with the MongoDB _id
+          // This is crucial for the `jwt` and `session` callbacks.
+          user.id = dbUser._id.toString();
+
+          return true; // Allow the sign-in to proceed
+        } catch (error) {
+          console.error("Error during OAuth signIn callback:", error);
+          return false; // Deny sign-in on any error
+        }
+      }
+
+      return true; // Default to allow sign-in for other providers if any
     },
 
     // --- JWT Callback (Your existing logic) ---
@@ -137,31 +200,38 @@ export const authOptions: NextAuthOptions = {
             session.user.id = token.id as string;
         }
 
-        // ==========================================================
-        // ✨ NEW: ADD INSTITUTION INFO TO THE SESSION
-        // ==========================================================
         // This makes the institution's ID and name available globally
         // in the session, which is very useful for frontend components.
-        if (token.id) {
+          if (token.id) {
             try {
                 await connectDB();
+                const userObjectId = new Types.ObjectId(token.id as string);
+                
+                // Find any institution where this user is an owner or admin
                 const institution = await Institution.findOne({
-                    $or: [{ owner: token.id }, { admins: token.id }]
+                    $or: [{ owner: userObjectId }, { admins: userObjectId }]
                 }).lean();
 
                 if (institution) {
-                    // Add a custom property to the session object
+                    // Determine the user's specific role within this institution
+                    let userRole: 'owner' | 'admin' = 'admin'; // Default to admin if found
+                    if (institution.owner.equals(userObjectId)) {
+                        userRole = 'owner';
+                    }
+
+                    // Attach the complete institution object, including the role, to the session
                     session.institution = {
                         id: institution._id.toString(),
                         name: institution.name,
                         portalKey: institution.portalKey,
+                        role: userRole,
                     };
                 }
             } catch (error) {
                 console.error("Failed to add institution data to session:", error);
+                delete session.institution;
             }
         }
-        // ==========================================================
         return session;
     },
   },

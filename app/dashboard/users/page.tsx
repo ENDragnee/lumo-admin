@@ -4,17 +4,20 @@ import { useState } from "react"
 import { motion } from "framer-motion"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { gql, request } from "graphql-request"
-import { format } from 'date-fns' // We will use this
+import { format } from 'date-fns'
 import { DataTable } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Users, UserCheck, UserX, Eye, Check, X, Mail, Loader2, TrendingUp } from "lucide-react"
+import { Users, UserCheck, UserX, Eye, Check, X, Mail, Loader2, TrendingUp, UserPlus } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/components/ui/use-toast"
 import { BulkActionBar } from "@/components/bulk-action-bar"
+// ✨ --- NEW IMPORT --- ✨
+import { InviteUserModal } from "@/components/modals/invite-user-modal"
+
 
 // Type for a single column, matching your DataTable component's interface
 interface Column {
@@ -31,7 +34,8 @@ interface InstitutionUser {
   email: string;
   profileImage: string | null;
   registrationDate: string;
-  status: 'active' | 'pending' | 'revoked';
+  // ✨ --- UPDATED STATUS TYPE --- ✨
+  status: 'active' | 'pending' | 'revoked' | 'invited';
   averagePerformance: number;
   businessName?: string;
   tin?: string;
@@ -78,6 +82,9 @@ const fetchUserManagementData = async (): Promise<UserManagementPageData> => {
 
 export default function UserManagementPage() {
   const [selectedUsers, setSelectedUsers] = useState<InstitutionUser[]>([]);
+  // ✨ --- NEW STATE FOR MODAL --- ✨
+  const [isInviteModalOpen, setInviteModalOpen] = useState(false);
+  
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -150,35 +157,26 @@ export default function UserManagementPage() {
     },
     {
       key: "registrationDate",
-      label: "Registration Date",
+      label: "Date",
       sortable: true,
-      // ✨ FIX: Correctly parse the millisecond timestamp and format it.
-      render: (value: string) => {
-        // Handle cases where the date might be null, undefined, or an empty string.
+      render: (value: string, row: InstitutionUser) => {
+        if (row.status === 'invited') {
+          return <span className="text-gray-500 italic">Invited</span>
+        }
         if (!value) {
           return <span className="text-gray-400">-</span>;
         }
         try {
-          // The API provides a timestamp as a string (e.g., "1752767168418").
-          // We must convert it to a number before creating a Date object.
           const timestamp = Number(value);
-          
-          // Check if the conversion resulted in a non-numeric or zero value.
           if (isNaN(timestamp)) {
              return <span className="text-red-500">Invalid Timestamp</span>;
           }
-
           const date = new Date(timestamp);
-
-          // An extra check to ensure the date object is valid.
           if (isNaN(date.getTime())) {
             return <span className="text-red-500">Invalid Date</span>;
           }
-
-          // Format the valid Date object using date-fns.
           return format(date, "MMMM d, yyyy");
         } catch (e) {
-          // Catch any other unexpected errors during processing.
           return <span className="text-red-500">Error</span>;
         }
       },
@@ -187,11 +185,22 @@ export default function UserManagementPage() {
       key: "status",
       label: "Status",
       sortable: true,
-      render: (value: string) => (
-        <Badge variant={value === "active" ? "default" : value === "pending" ? "secondary" : "destructive"} className="capitalize">
-          {value}
-        </Badge>
-      ),
+      // ✨ --- UPDATED BADGE RENDERING --- ✨
+      render: (value: 'active' | 'pending' | 'revoked' | 'invited') => {
+        const variantMap = {
+          active: 'default',
+          pending: 'secondary',
+          revoked: 'destructive',
+          invited: 'warning', // You might need to define a 'warning' variant in your badge component
+        };
+        // Fallback to secondary if variantMap[value] is undefined
+        const badgeVariant = variantMap[value] || 'secondary' as any;
+        return (
+          <Badge variant={badgeVariant} className="capitalize">
+            {value}
+          </Badge>
+        )
+      },
     },
     {
       key: "averagePerformance",
@@ -217,6 +226,13 @@ export default function UserManagementPage() {
           <DropdownMenuItem className="text-red-600" onClick={() => handleUpdateStatus(row.userId, 'revoked')}><X className="w-4 h-4 mr-2" />Reject</DropdownMenuItem>
         </>
       )}
+      {row.status === "invited" && (
+        <>
+          <DropdownMenuItem>Resend Invite</DropdownMenuItem>
+          <DropdownMenuItem className="text-red-600">Revoke Invite</DropdownMenuItem>
+        </>
+      )}
+      {/* We will implement message modal later */}
       <DropdownMenuItem><Mail className="w-4 h-4 mr-2" />Send Message</DropdownMenuItem>
     </>
   );
@@ -228,45 +244,63 @@ export default function UserManagementPage() {
   const users = data?.getUserManagementData.users || [];
 
   return (
-    <div className="p-6 space-y-6">
-      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
-        <div><h1 className="text-2xl font-bold text-gray-900">User Management</h1><p className="text-gray-600 mt-1">Manage user registrations, approvals, and performance tracking</p></div>
-        <div className="flex items-center gap-3"><Button variant="outline">Export Users</Button><Button>Invite Users</Button></div>
-      </motion.div>
+    <>
+      {/* ✨ --- RENDER THE MODAL --- ✨ */}
+      <InviteUserModal 
+        isOpen={isInviteModalOpen}
+        onClose={() => setInviteModalOpen(false)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['userManagement'] });
+        }}
+      />
+      <div className="p-6 space-y-6">
+        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
+          <div><h1 className="text-2xl font-bold text-gray-900">User Management</h1><p className="text-gray-600 mt-1">Manage user registrations, approvals, and performance tracking</p></div>
+          {/* ✨ --- UPDATED INVITE BUTTON --- ✨ */}
+          <div className="flex items-center gap-3">
+            <Button variant="outline">Export Users</Button>
+            <Button onClick={() => setInviteModalOpen(true)}>
+              <UserPlus className="mr-2 h-4 w-4" /> Invite Users
+            </Button>
+          </div>
+        </motion.div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Users</CardTitle><Users className="w-4 h-4 text-blue-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.totalUsers ?? 0}</div></CardContent></Card></motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Active Users</CardTitle><UserCheck className="w-4 h-4 text-green-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.activeUsers ?? 0}</div></CardContent></Card></motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Pending Approval</CardTitle><UserX className="w-4 h-4 text-orange-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.pendingUsers ?? 0}</div></CardContent></Card></motion.div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Avg. Performance</CardTitle><TrendingUp className="w-4 h-4 text-purple-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{Math.round(stats?.averagePerformance ?? 0)}%</div></CardContent></Card></motion.div>
+        {/* ... rest of the component is unchanged ... */}
+        
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Users</CardTitle><Users className="w-4 h-4 text-blue-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.totalUsers ?? 0}</div></CardContent></Card></motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Active Users</CardTitle><UserCheck className="w-4 h-4 text-green-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.activeUsers ?? 0}</div></CardContent></Card></motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Pending Approval</CardTitle><UserX className="w-4 h-4 text-orange-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.pendingUsers ?? 0}</div></CardContent></Card></motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Avg. Performance</CardTitle><TrendingUp className="w-4 h-4 text-purple-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{Math.round(stats?.averagePerformance ?? 0)}%</div></CardContent></Card></motion.div>
+        </div>
+        
+        {selectedUsers.length > 0 && 
+          <BulkActionBar
+            selectedCount={selectedUsers.length}
+            onClear={() => setSelectedUsers([])}
+            actions={{
+              approve: { handler: handleBulkApprove, isLoading: userStatusMutation.isPending },
+              reject: { handler: handleBulkReject, isLoading: userStatusMutation.isPending },
+            }}
+            itemType="users"
+          />
+        }
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+          <Card>
+            <CardHeader><CardTitle>User Directory</CardTitle><CardDescription>Manage user registrations, approvals, and track learning performance</CardDescription></CardHeader>
+            <CardContent>
+              <DataTable
+                data={users}
+                columns={columns}
+                selectable
+                onRowSelect={setSelectedUsers}
+                actions={renderActions}
+              />
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
-      
-      {selectedUsers.length > 0 && 
-        <BulkActionBar
-          selectedCount={selectedUsers.length}
-          onClear={() => setSelectedUsers([])}
-          actions={{
-            approve: { handler: handleBulkApprove, isLoading: userStatusMutation.isPending },
-            reject: { handler: handleBulkReject, isLoading: userStatusMutation.isPending },
-          }}
-          itemType="users"
-        />
-      }
-
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
-        <Card>
-          <CardHeader><CardTitle>User Directory</CardTitle><CardDescription>Manage user registrations, approvals, and track learning performance</CardDescription></CardHeader>
-          <CardContent>
-            <DataTable
-              data={users}
-              columns={columns}
-              selectable
-              onRowSelect={setSelectedUsers}
-              actions={renderActions}
-            />
-          </CardContent>
-        </Card>
-      </motion.div>
-    </div>
+    </>
   )
 }

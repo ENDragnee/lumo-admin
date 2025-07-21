@@ -11,18 +11,17 @@ export interface IInstitution extends Document {
   updatedAt: Date;
   portalKey: string;
   subscriptionStatus: 'active' | 'trialing' | 'past_due' | 'canceled';
-  // ✨ UPDATED: Added more fields to match the UI
   branding: {
     logoUrl?: string;
     primaryColor?: string;
     secondaryColor?: string; // Added secondary color
   };
-  // ✨ NEW: Added contact and info fields
   description?: string;
   website?: string;
   contactEmail?: string;
   contactPhone?: string;
   address?: string;
+  parentInstitution?: Types.ObjectId | null; 
 }
 
 const InstitutionSchema = new mongoose.Schema<IInstitution>({
@@ -46,6 +45,12 @@ const InstitutionSchema = new mongoose.Schema<IInstitution>({
   contactEmail: { type: String },
   contactPhone: { type: String },
   address: { type: String },
+  parentInstitution: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Institution',
+    default: null, 
+    index: true,
+  },
 }, { timestamps: true });
 
 InstitutionSchema.index({ members: 1 });

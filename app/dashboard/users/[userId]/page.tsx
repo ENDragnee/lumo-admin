@@ -1,3 +1,4 @@
+// @/app/users/[userId]/page.tsx
 "use client"
 
 import { motion } from "framer-motion"

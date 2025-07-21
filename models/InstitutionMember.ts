@@ -2,7 +2,7 @@
 import mongoose, { Document, Model, Schema, Types } from 'mongoose';
 
 export type InstitutionRole = 'owner' | 'admin' | 'member';
-export type MembershipStatus = 'active' | 'pending' | 'revoked';
+export type MembershipStatus = 'active' | 'pending' | 'revoked' | 'invited' | 'finished';
 
 export interface IInstitutionMember extends Document {
   institutionId: Types.ObjectId;
@@ -34,7 +34,7 @@ const InstitutionMemberSchema = new Schema<IInstitutionMember>({
   },
   status: {
     type: String,
-    enum: ['active', 'pending', 'revoked'],
+    enum: ['active', 'pending', 'revoked', 'invited', 'finished'],
     default: 'active',
   },
   joinedAt: {
