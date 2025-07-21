@@ -230,6 +230,7 @@ export const typeDefs = `#graphql
     createContentModule(input: CreateContentInput!): ContentModule!
     updateContentOrder(orderedIds: [ID!]!): Boolean!
     deleteContentModules(ids: [ID!]!): Boolean!
+    updateContentStatus(ids: [ID!]!, isDraft: Boolean!): Boolean!
     updateUserStatus(input: UpdateUserStatusInput!): InstitutionUser!
     updateSettings(input: UpdateSettingsInput!): SettingsData!
     changePassword(input: ChangePasswordInput!): Boolean!

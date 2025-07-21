@@ -10,7 +10,7 @@ const quickActions = [
   {
     title: "New Content",
     icon: Plus,
-    href: "/dashboard/content/new",
+    href: "https://lumo-creator.aasciihub.com",
     color: "bg-blue-600",
   },
   {
@@ -18,12 +18,6 @@ const quickActions = [
     icon: Users,
     href: "/dashboard/users?filter=pending",
     color: "bg-green-600",
-  },
-  {
-    title: "Upload",
-    icon: Upload,
-    href: "/dashboard/content/upload",
-    color: "bg-purple-600",
   },
   {
     title: "Reports",

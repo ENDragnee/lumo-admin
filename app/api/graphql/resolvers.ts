@@ -543,6 +543,17 @@ export const resolvers = {
       
       return result.modifiedCount > 0;
     },
+
+    updateContentStatus: async(_:any, {ids, isDraft}: { ids: string[], isDraft: boolean }, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      const result = await Content.updateMany(
+        { _id: { $in: ids }, institutionId },
+        { $set: { isDraft: isDraft} }
+      );
+      return result.modifiedCount > 0;
+    },
     
     updateContentOrder: async (_:any, { orderedIds }: { orderedIds: string[] }, context: ContextValue) => {
       await connectDB();

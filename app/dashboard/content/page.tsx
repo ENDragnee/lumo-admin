@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/components/ui/use-toast"
-import { Plus, BookOpen, Users, TrendingUp, Edit, Trash2, Eye, Loader2 } from "lucide-react"
+import { Plus, BookOpen, Users, TrendingUp, Edit, Trash2, Eye, Loader2, UploadCloud, ArrowDownToLine } from "lucide-react"
 import Link from "next/link"
 import { BulkActionBar } from "@/components/bulk-action-bar"
 
@@ -54,6 +54,12 @@ const DELETE_MODULES_MUTATION = gql`
     deleteContentModules(ids: $ids)
   }
 `;
+const UPDATE_MODULES_STATUS = gql`
+  mutation UpdateContentStatus($ids: [ID!]!, $isDraft: Boolean!) {
+    updateContentStatus(ids: $ids, isDraft: $isDraft)
+  }
+`;
+
 
 const GQL_API_ENDPOINT = `${process.env.NEXT_PUBLIC_APP_URL}/api/graphql`;
 
@@ -83,9 +89,20 @@ export default function ContentManagementPage() {
     },
   });
 
-  // ==========================================================
-  // ✨ FIX: The 'columns' array is now formatted for your custom DataTable.
-  // ==========================================================
+  const statusMutation = useMutation({
+    mutationFn: (variables: { ids: string[]; isDraft: boolean }) => 
+      request(GQL_API_ENDPOINT, UPDATE_MODULES_STATUS, variables),
+    onSuccess: (_, variables) => {
+      const action = variables.isDraft ? "moved to drafts" : "published";
+      toast({ title: "Success", description: `Content has been ${action}.` });
+      queryClient.invalidateQueries({ queryKey: ['contentManagement'] });
+      setSelectedContent([]);
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: `Failed to update content status: ${error.message}`, variant: "destructive" });
+    },
+  });
+
   const columns: Column[] = [
     {
       key: "title",
@@ -108,7 +125,17 @@ export default function ContentManagementPage() {
       key: "creationDate",
       label: "Creation Date",
       sortable: true,
-      render: (value: string) => new Date(value).toLocaleDateString(),
+      // Note: This assumes creationDate is a standard date string. If it's a timestamp like the previous file, a similar fix would be needed.
+      render: (value: string) => {
+          if (!value) return "-";
+          try {
+              // Handle both timestamp strings and standard date strings
+              const date = new Date(isNaN(Number(value)) ? value : Number(value));
+              return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(date);
+          } catch {
+              return "Invalid Date";
+          }
+      },
     },
     {
       key: "engagementRate",
@@ -138,10 +165,19 @@ export default function ContentManagementPage() {
   const renderActions = (row: ContentModule) => (
     <>
       <DropdownMenuItem asChild>
-        <Link href={`/dashboard/content/${row.id}`}><Eye className="w-4 h-4 mr-2" /> View</Link>
+        <Link href={`https://easy-learning-two.vercel.app/content/${row.id}`}><Eye className="w-4 h-4 mr-2" /> View</Link>
       </DropdownMenuItem>
+      {row.status === 'Published' ? (
+        <DropdownMenuItem className="text-red-600" onClick={() => handleToggleStatus(row.id, true)}>
+          <ArrowDownToLine className="w-4 h-4 mr-2" /> Un-Publish
+        </DropdownMenuItem>
+      ) : (
+        <DropdownMenuItem className="text-red-600" onClick={() => handleToggleStatus(row.id, false)}>
+          <UploadCloud className="w-4 h-4 mr-2" /> Publish
+        </DropdownMenuItem>
+      )}
       <DropdownMenuItem asChild>
-        <Link href={`/dashboard/content/${row.id}/edit`}><Edit className="w-4 h-4 mr-2" /> Edit</Link>
+        <Link href={`https://lumo-creator.aasciihub.com/studio/${row.id}`}><Edit className="w-4 h-4 mr-2" /> Edit</Link>
       </DropdownMenuItem>
       <DropdownMenuItem className="text-red-600" onClick={() => deleteMutation.mutate([row.id])}>
         <Trash2 className="w-4 h-4 mr-2" /> Delete
@@ -153,8 +189,22 @@ export default function ContentManagementPage() {
     const idsToDelete = selectedContent.map(c => c.id);
     deleteMutation.mutate(idsToDelete);
   };
+
+  // ✨ FIX: New handler to toggle status for a single item
+  const handleToggleStatus = (moduleId: string, isCurrentlyPublished: boolean) => {
+    statusMutation.mutate({ ids: [moduleId], isDraft: isCurrentlyPublished });
+  };
+  // ✨ FIX: Specific handlers for bulk publishing and unpublishing
+  const handleBulkPublish = () => {
+    const idsToUpdate = selectedContent.map(c => c.id);
+    statusMutation.mutate({ ids: idsToUpdate, isDraft: false });
+  };
+
+  const handleBulkUnpublish = () => {
+    const idsToUpdate = selectedContent.map(c => c.id);
+    statusMutation.mutate({ ids: idsToUpdate, isDraft: true });
+  };
   
-  // Dummy bulk edit handler for now
   const handleBulkEdit = () => {
     console.log("Bulk editing content:", selectedContent);
     toast({ title: "In Progress", description: "Bulk edit functionality is not yet implemented." });
@@ -172,7 +222,7 @@ export default function ContentManagementPage() {
         </div>
         <div className="flex items-center gap-3">
           <Button variant="outline" asChild><Link href="/dashboard/content/organize">Organize Modules</Link></Button>
-          <Button asChild><Link href="/dashboard/content/new"><Plus className="w-4 h-4 mr-2" /> Create Content</Link></Button>
+          <Button asChild><Link href="https://lumo-creator.aasciihub.com"><Plus className="w-4 h-4 mr-2" /> Create Content</Link></Button>
         </div>
       </motion.div>
 
@@ -203,15 +253,18 @@ export default function ContentManagementPage() {
         </motion.div>
       </div>
 
+      {/* ✨ FIX: The actions prop now passes an object with 'handler' and 'isLoading' properties for each action. */}
       {selectedContent.length > 0 && (
         <BulkActionBar
           selectedCount={selectedContent.length}
-          selectedItems={selectedContent}
+          onClear={() => setSelectedContent([])}
           actions={{
-            edit: handleBulkEdit,
-            delete: handleBulkDelete,
+            edit: { handler: handleBulkEdit, isLoading: false },
+            publish: { handler: handleBulkPublish, isLoading: statusMutation.isPending },
+            unpublish: { handler: handleBulkUnpublish, isLoading: statusMutation.isPending },
+            delete: { handler: handleBulkDelete, isLoading: deleteMutation.isPending },
           }}
-          type="content"
+          itemType="content"
         />
       )}
 

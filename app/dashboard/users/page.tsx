@@ -152,19 +152,33 @@ export default function UserManagementPage() {
       key: "registrationDate",
       label: "Registration Date",
       sortable: true,
-      // ✨ FIX: This render function is now defensive against invalid date values.
+      // ✨ FIX: Correctly parse the millisecond timestamp and format it.
       render: (value: string) => {
+        // Handle cases where the date might be null, undefined, or an empty string.
         if (!value) {
           return <span className="text-gray-400">-</span>;
         }
         try {
-          // Create a date object and check if it's valid
-          const date = new Date(value);
+          // The API provides a timestamp as a string (e.g., "1752767168418").
+          // We must convert it to a number before creating a Date object.
+          const timestamp = Number(value);
+          
+          // Check if the conversion resulted in a non-numeric or zero value.
+          if (isNaN(timestamp)) {
+             return <span className="text-red-500">Invalid Timestamp</span>;
+          }
+
+          const date = new Date(timestamp);
+
+          // An extra check to ensure the date object is valid.
           if (isNaN(date.getTime())) {
             return <span className="text-red-500">Invalid Date</span>;
           }
+
+          // Format the valid Date object using date-fns.
           return format(date, "MMMM d, yyyy");
         } catch (e) {
+          // Catch any other unexpected errors during processing.
           return <span className="text-red-500">Error</span>;
         }
       },

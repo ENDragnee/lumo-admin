@@ -15,7 +15,10 @@ interface BulkActionBarProps {
   selectedCount: number;
   onClear: () => void;
   actions: {
+    publish?: ActionHandler;
+    unpublish?: ActionHandler;
     approve?: ActionHandler;
+    edit?: ActionHandler;
     reject?: ActionHandler;
     delete?: ActionHandler;
     message?: () => void; // Can be simple if no loading state
