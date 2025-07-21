@@ -11,6 +11,7 @@ import InstitutionMember from '@/models/InstitutionMember';
 import Content from '@/models/Content';
 import Performance from '@/models/Performance';
 import Interaction from '@/models/Interaction';
+import Invitation from '@/models/Invitation';
 import { hashPassword, verifyPassword } from '@/lib/password-utils'; // You'll need these utils
 
 interface ContextValue {
@@ -495,6 +496,68 @@ export const resolvers = {
         },
       };
     },
+    getInvitationDetails: async (_: any, __: any, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      const invitations = await Invitation.find({ institutionId })
+        .populate('sentBy', 'name profileImage') // Populate sender's info
+        .sort({ createdAt: -1 }) // Show newest first
+        .lean();
+
+      return invitations.map(invite => ({
+        id: invite._id,
+        email: invite.email,
+        role: invite.role,
+        status: invite.status,
+        sentBy: invite.sentBy,
+        sentDate: (invite.createdAt as Date).toISOString(),
+        expiresAt: (invite.expiresAt as Date).toISOString(),
+      }));
+    },
+    getInvitationPageData: async (_: any, __: any, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      // 1. Fetch all invitations for the institution
+      const allInvitations = await Invitation.find({ institutionId })
+        .populate('sentBy', 'name profileImage')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      // 2. Calculate Stats
+      const totalInvites = allInvitations.length;
+      const counts = allInvitations.reduce((acc, invite) => {
+          acc[invite.status] = (acc[invite.status] || 0) + 1;
+          return acc;
+        }, { pending: 0, accepted: 0, expired: 0 } as Record<string, number>);
+
+      const stats = {
+        totalInvites,
+        pendingCount: counts.pending,
+        acceptedCount: counts.accepted,
+        expiredCount: counts.expired,
+        pendingPercentage: totalInvites > 0 ? (counts.pending / totalInvites) * 100 : 0,
+        acceptedPercentage: totalInvites > 0 ? (counts.accepted / totalInvites) * 100 : 0,
+      };
+
+      // 3. Map the invitation details (as before)
+      const mappedInvitations = allInvitations.map(invite => ({
+        id: invite._id,
+        email: invite.email,
+        role: invite.role,
+        status: invite.status,
+        sentBy: invite.sentBy,
+        sentDate: (invite.createdAt as Date).toISOString(),
+        expiresAt: (invite.expiresAt as Date).toISOString(),
+      }));
+
+      // 4. Return the complete data package
+      return {
+        stats,
+        invitations: mappedInvitations,
+      };
+    },
   },
 
   Mutation: {
@@ -638,7 +701,7 @@ export const resolvers = {
       };
     },
 
-    changePassword: async (_: any, { input }: { input: { currentPassword: string, newPassword: string } }, context: ContextValue) => {
+    changePassword: async (_: any, { input }: { input: { currentPassword: string, newPassword: string } }, context: ContextValue) =>{
       await connectDB();
       if (!context.session?.user?.id) {
         throw new GraphQLError("You must be logged in to change your password.");
@@ -665,6 +728,23 @@ export const resolvers = {
       await user.save();
       
       return true;
-    }
+    },
+    
+    revokeInvitation: async (_: any, { invitationId }: { invitationId: string }, context: ContextValue) => {
+      await connectDB();
+      const institutionId = getInstitutionIdFromContext(context);
+
+      // Security check: ensure the invitation belongs to the admin's institution
+      const result = await Invitation.deleteOne({
+        _id: new Types.ObjectId(invitationId),
+        institutionId: institutionId,
+      });
+
+      if (result.deletedCount === 0) {
+        throw new GraphQLError('Invitation not found or you do not have permission to revoke it.');
+      }
+      
+      return true;
+    },
   },
 };

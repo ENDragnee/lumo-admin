@@ -9,6 +9,16 @@ export const typeDefs = `#graphql
     email: String!
     profileImage: String # This was missing in your last schema but needed by the resolver
   }
+  
+  type InvitationDetails {
+    id: ID!
+    email: String!
+    role: String! # 'admin' or 'member'
+    status: String! # 'pending', 'accepted', 'expired'
+    sentBy: User!
+    sentDate: String! # ISO Date String
+    expiresAt: String! # ISO Date String
+  }
 
   # Represents an institution with its related users
   type Institution {
@@ -203,18 +213,25 @@ export const typeDefs = `#graphql
     currentPassword: String!
     newPassword: String!
   }
+  
+  type InvitationStats {
+    totalInvites: Int!
+    pendingCount: Int!
+    acceptedCount: Int!
+    expiredCount: Int!
+    pendingPercentage: Float!
+    acceptedPercentage: Float!
+  }
+
+  type InvitationPageData {
+    stats: InvitationStats!
+    invitations: [InvitationDetails!]!
+  }
 
   type Query {
-    # Fetches the details of the currently logged-in user
     me: User
-
-    # Fetches the institution details for the currently logged-in admin
     myInstitution: Institution
-
-    # Fetches all aggregated stats for the admin dashboard
     getDashboardStats: DashboardStats!
-    
-    # Fetches the most recent interactions for the institution.
     getRecentActivity(limit: Int): [ActivityItem!]!
     getContentModules: [ContentModule!]!
     getContentStats: ContentStats!
@@ -222,6 +239,8 @@ export const typeDefs = `#graphql
     getUserDetail(userId: ID!): UserDetail!
     getAnalyticsData: AnalyticsPageData!
     getSettingsData: SettingsData!
+    getInvitationDetails: [InvitationDetails!]!
+    getInvitationPageData: InvitationPageData!
   }
 
   # Defines all the mutations (write operations) available
@@ -234,5 +253,6 @@ export const typeDefs = `#graphql
     updateUserStatus(input: UpdateUserStatusInput!): InstitutionUser!
     updateSettings(input: UpdateSettingsInput!): SettingsData!
     changePassword(input: ChangePasswordInput!): Boolean!
+    revokeInvitation(invitationId: ID!): Boolean!
   }
 `;

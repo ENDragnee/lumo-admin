@@ -11,6 +11,7 @@ export interface IInvitation extends Document {
   token: string;
   status: InvitationStatus;
   expiresAt: Date;
+  createdAt: Date;
 }
 
 const InvitationSchema = new Schema<IInvitation>({
@@ -47,12 +48,11 @@ const InvitationSchema = new Schema<IInvitation>({
     enum: ['pending', 'accepted', 'expired'],
     default: 'pending',
   },
-  // Set the invitation to expire in 7 days by default
   expiresAt: {
     type: Date,
     default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
     index: { expires: '1s' }, // Automatically remove expired invitations if needed
-  },
+  }
 }, {
   timestamps: true,
 });

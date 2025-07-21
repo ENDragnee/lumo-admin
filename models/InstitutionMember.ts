@@ -45,8 +45,6 @@ const InstitutionMemberSchema = new Schema<IInstitutionMember>({
     type: Date,
     default: Date.now
   },
-  // Mongoose's 'Mixed' type allows for a completely flexible object.
-  // It's powerful but use with caution. Perfect for your use case.
   metadata: {
     type: Schema.Types.Mixed,
     default: {},

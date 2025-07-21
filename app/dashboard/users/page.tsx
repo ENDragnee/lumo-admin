@@ -15,7 +15,6 @@ import { Users, UserCheck, UserX, Eye, Check, X, Mail, Loader2, TrendingUp, User
 import Link from "next/link"
 import { useToast } from "@/components/ui/use-toast"
 import { BulkActionBar } from "@/components/bulk-action-bar"
-// ✨ --- NEW IMPORT --- ✨
 import { InviteUserModal } from "@/components/modals/invite-user-modal"
 
 
@@ -265,13 +264,51 @@ export default function UserManagementPage() {
           </div>
         </motion.div>
 
-        {/* ... rest of the component is unchanged ... */}
-        
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Total Users</CardTitle><Users className="w-4 h-4 text-blue-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.totalUsers ?? 0}</div></CardContent></Card></motion.div>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Active Users</CardTitle><UserCheck className="w-4 h-4 text-green-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.activeUsers ?? 0}</div></CardContent></Card></motion.div>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Pending Approval</CardTitle><UserX className="w-4 h-4 text-orange-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{stats?.pendingUsers ?? 0}</div></CardContent></Card></motion.div>
-          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}><Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium">Avg. Performance</CardTitle><TrendingUp className="w-4 h-4 text-purple-600" /></CardHeader><CardContent><div className="text-2xl font-bold">{Math.round(stats?.averagePerformance ?? 0)}%</div></CardContent></Card></motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+                <Users className="w-4 h-4 text-blue-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats?.totalUsers ?? 0}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+                <UserCheck className="w-4 h-4 text-green-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats?.activeUsers ?? 0}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Pending Approval</CardTitle>
+                <UserX className="w-4 h-4 text-orange-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats?.pendingUsers ?? 0}</div>
+              </CardContent>
+            </Card>
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Avg. Performance</CardTitle>
+                <TrendingUp className="w-4 h-4 text-purple-600" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{Math.round(stats?.averagePerformance ?? 0)}%</div>
+              </CardContent>
+            </Card>
+          </motion.div>
         </div>
         
         {selectedUsers.length > 0 && 
