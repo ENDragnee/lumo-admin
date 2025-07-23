@@ -4,7 +4,7 @@ import { motion } from "framer-motion"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { Home, BookOpen, Users, BarChart3, Settings, FileText, Send, UserCheck } from "lucide-react"
+import { Home, BookOpen, Users, BarChart3, Settings, FileText, Send, UserCheck, Hotel } from "lucide-react"
 import Link from "next/link"
 
 const navigationItems = [
@@ -19,6 +19,7 @@ const navigationItems = [
       { title: "Manage Invites", href: "/dashboard/users/invites", icon: Send },
     ]
   },
+  { title: "Organizations", href: "/dashboard/organizations", icon: Hotel },
   { title: "Analytics", href: "/dashboard/analytics", icon: BarChart3 },
   { title: "Reports", href: "/dashboard/reports", icon: FileText },
   { title: "Settings", href: "/dashboard/settings", icon: Settings },

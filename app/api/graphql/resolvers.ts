@@ -558,6 +558,31 @@ export const resolvers = {
         invitations: mappedInvitations,
       };
     },
+    getSubInstitutions: async (_: any, __: any, context: ContextValue) => {
+      await connectDB();
+      const parentInstitutionId = getInstitutionIdFromContext(context);
+
+      const subInstitutions = await Institution.find({ parentInstitution: parentInstitutionId })
+        .populate('owner', 'name email profileImage')
+        .lean();
+
+      // For each sub-institution, we can fetch its member count.
+      // This can be optimized, but is fine for a moderate number of sub-institutions.
+      const results = await Promise.all(subInstitutions.map(async (inst) => {
+        const memberCount = await InstitutionMember.countDocuments({ institutionId: inst._id });
+        return {
+          id: inst._id,
+          name: inst.name,
+          owner: inst.owner,
+          memberCount,
+          createdAt: (inst.createdAt as Date).toISOString(),
+          subscriptionStatus: inst.subscriptionStatus,
+          portalKey: inst.portalKey,
+        };
+      }));
+
+      return results;
+    },
   },
 
   Mutation: {
@@ -743,6 +768,145 @@ export const resolvers = {
       if (result.deletedCount === 0) {
         throw new GraphQLError('Invitation not found or you do not have permission to revoke it.');
       }
+      
+      return true;
+    },
+     createSubInstitution: async (_: any, { input }: { input: any }, context: ContextValue) => {
+      await connectDB();
+      const parentInstitutionId = getInstitutionIdFromContext(context);
+      const sessionUser = context.session?.user;
+      
+      if (!sessionUser) {
+        throw new GraphQLError("Authentication required.", { extensions: { code: 'UNAUTHENTICATED' } });
+      }
+
+      // 1. Find the user who will be the owner of the new sub-institution
+      const owner = await User.findOne({ email: input.ownerEmail });
+      if (!owner) {
+        throw new GraphQLError(`User with email ${input.ownerEmail} not found. They must have an account first.`);
+      }
+
+      // 2. Check for portalKey uniqueness
+      const existingPortalKey = await Institution.findOne({ portalKey: input.portalKey });
+      if (existingPortalKey) {
+        throw new GraphQLError("Portal Key is already in use. Please choose another one.");
+      }
+
+      // 3. Create the new sub-institution
+      const newSubInstitution = new Institution({
+        name: input.name,
+        owner: owner._id,
+        portalKey: input.portalKey,
+        parentInstitution: parentInstitutionId,
+        subscriptionStatus: 'trialing', // Default status
+      });
+      await newSubInstitution.save();
+
+      // 4. Automatically add the owner as a member
+      await new InstitutionMember({
+        institutionId: newSubInstitution._id,
+        userId: owner._id,
+        role: 'owner',
+        status: 'active',
+      }).save();
+
+      return {
+        id: newSubInstitution._id,
+        name: newSubInstitution.name,
+        owner: owner,
+        memberCount: 1, // Starts with one member (the owner)
+        createdAt: newSubInstitution.createdAt.toISOString(),
+        subscriptionStatus: newSubInstitution.subscriptionStatus,
+      };
+    },
+
+    updateSubInstitutionStatus: async (_: any, { input }: { input: any }, context: ContextValue) => {
+      await connectDB();
+      const parentInstitutionId = getInstitutionIdFromContext(context);
+
+      // Security check: ensure the institution being updated is a child of the admin's institution
+      const subInstitution = await Institution.findOneAndUpdate(
+        { _id: input.institutionId, parentInstitution: parentInstitutionId },
+        { $set: { subscriptionStatus: input.status } },
+        { new: true }
+      ).populate('owner', 'name email profileImage');
+
+      if (!subInstitution) {
+        throw new GraphQLError("Sub-institution not found or you do not have permission to modify it.");
+      }
+      
+      const memberCount = await InstitutionMember.countDocuments({ institutionId: subInstitution._id });
+
+      return {
+        id: subInstitution._id,
+        name: subInstitution.name,
+        owner: subInstitution.owner,
+        memberCount,
+        createdAt: subInstitution.createdAt.toISOString(),
+        subscriptionStatus: subInstitution.subscriptionStatus,
+      };
+    },
+    updateSubInstitution: async (_: any, { input }: { input: any }, context: ContextValue) => {
+        await connectDB();
+        const parentInstitutionId = getInstitutionIdFromContext(context);
+        
+        // Security check: Only allow updates to sub-institutions of the current parent
+        const updatedInstitution = await Institution.findOneAndUpdate(
+            { _id: input.institutionId, parentInstitution: parentInstitutionId },
+            { $set: { name: input.name } },
+            { new: true }
+        ).populate('owner', 'name email profileImage');
+
+        if (!updatedInstitution) {
+            throw new GraphQLError("Sub-institution not found or you do not have permission to edit it.");
+        }
+
+        const memberCount = await InstitutionMember.countDocuments({ institutionId: updatedInstitution._id });
+
+        return {
+          id: updatedInstitution._id,
+          name: updatedInstitution.name,
+          owner: updatedInstitution.owner,
+          memberCount,
+          createdAt: updatedInstitution.createdAt.toISOString(),
+          subscriptionStatus: updatedInstitution.subscriptionStatus,
+          portalKey: updatedInstitution.portalKey,
+        };
+    },
+    deleteSubInstitution: async (_: any, { institutionId }: { institutionId: string }, context: ContextValue) => {
+      await connectDB();
+      const parentInstitutionId = getInstitutionIdFromContext(context);
+      const subInstitutionObjectId = new Types.ObjectId(institutionId);
+
+      // 1. Security Check: Verify the institution is a child of the current admin's institution
+      const institutionToDelete = await Institution.findOne({
+        _id: subInstitutionObjectId,
+        parentInstitution: parentInstitutionId,
+      });
+
+      if (!institutionToDelete) {
+        throw new GraphQLError("Sub-institution not found or you do not have permission to delete it.", {
+          extensions: { code: 'FORBIDDEN' },
+        });
+      }
+
+      // 2. Perform Cascading Deletes (remove all data associated with the sub-institution)
+      // This is crucial to prevent orphaned data in your database.
+      console.log(`Starting deletion for sub-institution ID: ${institutionId}`);
+      
+      // Find all user IDs belonging to this sub-institution
+      const members = await InstitutionMember.find({ institutionId: subInstitutionObjectId }).select('userId');
+      const userIds = members.map(m => m.userId);
+
+      // Delete members, invitations, content, etc.
+      await InstitutionMember.deleteMany({ institutionId: subInstitutionObjectId });
+      await Invitation.deleteMany({ institutionId: subInstitutionObjectId });
+      await Content.deleteMany({ institutionId: subInstitutionObjectId });
+      
+      // 3. Delete the sub-institution itself
+      await Institution.deleteOne({ _id: subInstitutionObjectId });
+      
+      console.log(`Successfully deleted sub-institution ID: ${institutionId} and its associated data.`);
       
       return true;
     },

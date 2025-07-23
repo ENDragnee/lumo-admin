@@ -1,5 +1,3 @@
-// /app/api/reports/users/route.ts
-
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -7,9 +5,10 @@ import connectDB from "@/lib/mongodb";
 import InstitutionMember from "@/models/InstitutionMember";
 import { Types } from "mongoose";
 import ExcelJS from "exceljs";
-import PDFDocument from "pdfkit";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
-// --- Data Fetching Logic (Unchanged) ---
+// --- Data Fetching Logic ---
 async function fetchUserReportData(institutionId: Types.ObjectId) {
   await connectDB();
   const usersData = await InstitutionMember.aggregate([
@@ -31,12 +30,10 @@ async function fetchUserReportData(institutionId: Types.ObjectId) {
   return usersData.map(u => ({ ...u, "Avg Performance (%)": Math.round(u["Avg Performance (%)"]) }));
 }
 
-// --- Excel Generation (Corrected) ---
+// --- Excel Generation ---
 async function generateExcelReport(data: any[]): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Lumo Admin Portal";
-  workbook.created = new Date();
-  
   const worksheet = workbook.addWorksheet("User Performance Report");
 
   worksheet.columns = [
@@ -44,83 +41,65 @@ async function generateExcelReport(data: any[]): Promise<Buffer> {
     { header: "Email", key: "Email", width: 40 },
     { header: "Status", key: "Status", width: 15 },
     { header: "Registration Date", key: "Registration Date", width: 20 },
-    { header: "Avg Performance (%)", key: "Avg Performance (%)", width: 20 },
+    { header: "Avg Performance (%)", key: "Avg Performance (%)", width: 20, style: { numFmt: '#,##0"%"' } },
   ];
 
-  worksheet.getRow(1).eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF007BFF' } };
-    cell.alignment = { vertical: 'middle', horizontal: 'center' };
-    cell.border = { bottom: { style: 'thin', color: { argb: 'FF000000' } } };
-  });
-  
+  worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+  worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
   worksheet.addRows(data);
   
-  worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber > 1) {
-      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
-        if (worksheet.columns[colNumber - 1].key === 'Status' || worksheet.columns[colNumber - 1].key === 'Avg Performance (%)') {
-            cell.alignment = { vertical: 'middle', horizontal: 'center' };
-        }
-        if (rowNumber % 2 === 0) {
-            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF0F0F0' } };
-        }
-      });
-    }
-  });
-
-  // ==========================================================
-  // ✨ FIX: Convert the ArrayBuffer from exceljs into a Node.js Buffer
-  // ==========================================================
-  const arrayBuffer = await workbook.xlsx.writeBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-  return buffer;
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }
 
-// --- PDF Generation (Unchanged) ---
-async function generatePdfReport(data: any[]): Promise<Buffer> {
-    return new Promise((resolve) => {
-      const doc = new PDFDocument({ size: "A4", margin: 50 });
-      const buffers: Buffer[] = [];
-      doc.on('data', buffers.push.bind(buffers));
-      doc.on('end', () => resolve(Buffer.concat(buffers)));
+// ✨ --- PDF Generation (FIXED & IMPROVED) --- ✨
+async function generatePdfReport(data: any[], institutionName: string): Promise<Buffer> {
+    const doc = new jsPDF();
+    
+    doc.setFontSize(18);
+    doc.text("User Performance Report", 14, 22);
+    doc.setFontSize(11);
+    doc.text(`Institution: ${institutionName}`, 14, 30);
+    
+    const tableColumn = ["Name", "Email", "Status", "Registration Date", "Avg Perf."];
+    const tableRows: string[][] = [];
 
-      doc.fontSize(18).text("User Performance Report", { align: "center" });
-      doc.moveDown(2);
-
-      const tableTop = 150;
-      const itemHeight = 20;
-      doc.fontSize(10).font("Helvetica-Bold");
-      doc.text("Name", 50, tableTop); doc.text("Email", 180, tableTop); doc.text("Status", 350, tableTop); doc.text("Avg Perf.", 450, tableTop, { width: 90, align: "right" });
-      doc.font("Helvetica");
-
-      data.forEach((user, i) => {
-        const y = tableTop + (i + 1) * itemHeight;
-        doc.text(user.Name, 50, y);
-        doc.text(user.Email, 180, y, { width: 170, ellipsis: true });
-        doc.text(user.Status, 350, y, { width: 90 });
-        doc.text(`${user["Avg Performance (%)"]}%`, 450, y, { width: 90, align: "right" });
-      });
-
-      doc.end();
+    data.forEach(user => {
+        const userRow = [
+            user.Name || 'N/A',
+            user.Email || 'N/A',
+            user.Status ? user.Status.charAt(0).toUpperCase() + user.Status.slice(1) : 'N/A',
+            user["Registration Date"] || 'N/A',
+            `${user["Avg Performance (%)"]}%`
+        ];
+        tableRows.push(userRow);
     });
+
+    autoTable(doc, {
+        head: [tableColumn],
+        body: tableRows,
+        startY: 35,
+        theme: 'grid',
+        headStyles: { fillColor: [37, 99, 235] }, // blue-600
+    });
+
+    const buffer = Buffer.from(doc.output('arraybuffer'));
+    return buffer;
 }
 
 
-// --- API Route Handler (Unchanged) ---
+// --- API Route Handler ---
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || !session.institution?.id) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
+    if (!session?.institution?.id) return new NextResponse("Unauthorized", { status: 401 });
+    
     const institutionId = new Types.ObjectId(session.institution.id);
-
     const { searchParams } = new URL(request.url);
     const format = searchParams.get("format");
 
     if (!format || (format !== "xlsx" && format !== "pdf")) {
-      return new NextResponse("Invalid format specified. Use 'xlsx' or 'pdf'.", { status: 400 });
+      return new NextResponse("Invalid format specified.", { status: 400 });
     }
 
     const reportData = await fetchUserReportData(institutionId);
@@ -128,7 +107,6 @@ export async function GET(request: NextRequest) {
     if (format === "xlsx") {
       const buffer = await generateExcelReport(reportData);
       return new NextResponse(buffer, {
-        status: 200,
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           "Content-Disposition": `attachment; filename="user_report_${new Date().toISOString().split('T')[0]}.xlsx"`,
@@ -137,9 +115,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (format === "pdf") {
-      const buffer = await generatePdfReport(reportData);
+      // Pass institution name for the PDF header
+      const buffer = await generatePdfReport(reportData, session.institution.name);
       return new NextResponse(buffer, {
-        status: 200,
         headers: {
           "Content-Type": "application/pdf",
           "Content-Disposition": `attachment; filename="user_report_${new Date().toISOString().split('T')[0]}.pdf"`,

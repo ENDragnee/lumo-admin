@@ -108,6 +108,16 @@ export const typeDefs = `#graphql
     businessName: String
     tin: String
   }
+
+  type SubInstitution {
+    id: ID!
+    name: String!
+    owner: User!
+    memberCount: Int!
+    createdAt: String!
+    subscriptionStatus: String!
+    portalKey: String! 
+  }
   
   type UserManagementPageData {
     stats: UserManagementStats!
@@ -234,6 +244,25 @@ export const typeDefs = `#graphql
     status: String! # e.g., "active", "revoked", "finished"
   }
 
+  # Input for creating a new sub-institution
+  input CreateSubInstitutionInput {
+    name: String!
+    ownerEmail: String!
+    portalKey: String! # A unique identifier for the sub-institution's portal
+  }
+
+  input UpdateSubInstitutionInput {
+    institutionId: ID!
+    name: String!
+  }
+
+  # Input for updating a sub-institution's status
+  input UpdateSubInstitutionStatusInput {
+    institutionId: ID!
+    status: String! # e.g., 'active', 'trialing', 'past_due', 'canceled'
+  }
+
+
   type Query {
     me: User
     myInstitution: Institution
@@ -247,6 +276,7 @@ export const typeDefs = `#graphql
     getSettingsData: SettingsData!
     getInvitationDetails: [InvitationDetails!]!
     getInvitationPageData: InvitationPageData!
+    getSubInstitutions: [SubInstitution!]!
   }
 
   # Defines all the mutations (write operations) available
@@ -260,5 +290,9 @@ export const typeDefs = `#graphql
     updateSettings(input: UpdateSettingsInput!): SettingsData!
     changePassword(input: ChangePasswordInput!): Boolean!
     revokeInvitation(invitationId: ID!): Boolean!
+    createSubInstitution(input: CreateSubInstitutionInput!): SubInstitution!
+    updateSubInstitutionStatus(input: UpdateSubInstitutionStatusInput!): SubInstitution!
+    updateSubInstitution(input: UpdateSubInstitutionInput!): SubInstitution!
+    deleteSubInstitution(institutionId: ID!): Boolean!
   }
 `;
