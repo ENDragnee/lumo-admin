@@ -9,20 +9,28 @@ import { DataTable } from "@/components/data-table"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { DropdownMenuItem, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuPortal, DropdownMenuSubContent } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Users, UserCheck, UserX, Eye, Check, X, Mail, Loader2, TrendingUp, UserPlus } from "lucide-react"
+import { Users, UserCheck, UserX, Eye, Check, X, Mail, Loader2, TrendingUp, UserPlus, Download, UserCog, Ban, CheckCircle } from "lucide-react"
 import Link from "next/link"
 import { useToast } from "@/components/ui/use-toast"
 import { BulkActionBar } from "@/components/bulk-action-bar"
 import { InviteUserModal } from "@/components/modals/invite-user-modal"
+import { MessageUserModal } from "@/components/modals/message-user-modal"
+import { generateUserPdf } from "@/lib/pdf-generator"
+import { useSession } from "next-auth/react"
 
+type FilterType = {
+  type: "alphabetical" | "date" | "status",
+  options?: string[],
+}
 
 // Type for a single column, matching your DataTable component's interface
 interface Column {
   key: string;
   label: string;
   sortable?: boolean;
+  filterConfig?: FilterType; 
   render?: (value: any, row: InstitutionUser) => React.ReactNode;
 }
 
@@ -33,8 +41,7 @@ interface InstitutionUser {
   email: string;
   profileImage: string | null;
   registrationDate: string;
-  // ✨ --- UPDATED STATUS TYPE --- ✨
-  status: 'active' | 'pending' | 'revoked' | 'invited';
+  status: 'active' | 'pending' | 'revoked' | 'invited' | 'finished';
   averagePerformance: number;
   businessName?: string;
   tin?: string;
@@ -59,7 +66,7 @@ interface UpdateUserStatusResponse {
   };
 }
 
-// GraphQL Queries & Mutations (no changes needed)
+// GraphQL Queries & Mutations
 const GET_USER_MANAGEMENT_DATA = gql`
   query GetUserManagementData {
     getUserManagementData {
@@ -75,17 +82,20 @@ const UPDATE_USER_STATUS = gql`
 `;
 
 const GQL_API_ENDPOINT = `${process.env.NEXT_PUBLIC_APP_URL}/api/graphql`;
+
 const fetchUserManagementData = async (): Promise<UserManagementPageData> => {
   return request(GQL_API_ENDPOINT, GET_USER_MANAGEMENT_DATA);
 };
 
 export default function UserManagementPage() {
   const [selectedUsers, setSelectedUsers] = useState<InstitutionUser[]>([]);
-  // ✨ --- NEW STATE FOR MODAL --- ✨
   const [isInviteModalOpen, setInviteModalOpen] = useState(false);
-  
+  const [isMessageModalOpen, setMessageModalOpen] = useState(false);
+  const [messageRecipients, setMessageRecipients] = useState<InstitutionUser[]>([]);
+
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { data: session } = useSession();
 
   const { data, isLoading, isError, error } = useQuery<UserManagementPageData>({
     queryKey: ['userManagement'],
@@ -93,7 +103,7 @@ export default function UserManagementPage() {
   });
   
   const userStatusMutation = useMutation({
-    mutationFn: (variables: { userId: string, status: 'active' | 'revoked'}) => 
+    mutationFn: (variables: { userId: string, status: 'active' | 'revoked' | 'finished'}) => 
       request<UpdateUserStatusResponse>(GQL_API_ENDPOINT, UPDATE_USER_STATUS, { input: variables }),
     onSuccess: (data) => {
       toast({ title: "Success", description: `User status has been updated to ${data.updateUserStatus.status}.`});
@@ -106,30 +116,52 @@ export default function UserManagementPage() {
     }
   });
 
-  const handleUpdateStatus = (userId: string, status: 'active' | 'revoked') => {
+  const handleUpdateStatus = (userId: string, status: 'active' | 'revoked' | 'finished') => {
     userStatusMutation.mutate({ userId, status });
   }
 
   const handleBulkApprove = () => {
     selectedUsers.forEach(user => {
       if (user.status === 'pending') {
+        // Since 'active' is one of the allowed statuses, this is valid.
         handleUpdateStatus(user.userId, 'active');
       }
     });
   };
+
   const handleBulkReject = () => {
     selectedUsers.forEach(user => {
       if (user.status === 'pending') {
+        // Since 'revoked' is one of the allowed statuses, this is valid.
         handleUpdateStatus(user.userId, 'revoked');
       }
     });
   };
+  
+  const handleOpenMessageModal = (users: InstitutionUser[]) => {
+    if (users.length === 0) return;
+    setMessageRecipients(users);
+    setMessageModalOpen(true);
+  };
+
+  const handleExport = () => {
+    const dataToExport = selectedUsers.length > 0 ? selectedUsers : users;
+    if (!dataToExport || dataToExport.length === 0) {
+      toast({ title: "No Data", description: "There is no user data to export.", variant: "destructive" });
+      return;
+    }
+    generateUserPdf(dataToExport, session?.institution?.name || "My Institution");
+  };
+
 
   const columns: Column[] = [
     {
       key: "name",
       label: "User",
       sortable: true,
+      filterConfig: {
+        type: 'alphabetical',
+      },
       render: (_, row: InstitutionUser) => (
         <div className="flex items-center gap-3">
           <Avatar className="w-8 h-8">
@@ -157,6 +189,9 @@ export default function UserManagementPage() {
     {
       key: "registrationDate",
       label: "Date",
+      filterConfig: {
+        type: 'date',
+      },
       sortable: true,
       render: (value: string, row: InstitutionUser) => {
         if (row.status === 'invited') {
@@ -184,15 +219,18 @@ export default function UserManagementPage() {
       key: "status",
       label: "Status",
       sortable: true,
-      // ✨ --- UPDATED BADGE RENDERING --- ✨
-      render: (value: 'active' | 'pending' | 'revoked' | 'invited') => {
+      filterConfig: {
+        type: 'status',
+        options: ['active', 'pending', 'revoked', 'invited', 'finished'],
+      },
+      render: (value: 'active' | 'pending' | 'revoked' | 'invited' | 'finished') => {
         const variantMap = {
           active: 'default',
           pending: 'secondary',
           revoked: 'destructive',
-          invited: 'warning', // You might need to define a 'warning' variant in your badge component
+          invited: 'warning',
+          finished: 'outline',
         };
-        // Fallback to secondary if variantMap[value] is undefined
         const badgeVariant = variantMap[value] || 'secondary' as any;
         return (
           <Badge variant={badgeVariant} className="capitalize">
@@ -219,20 +257,28 @@ export default function UserManagementPage() {
   const renderActions = (row: InstitutionUser) => (
     <>
       <DropdownMenuItem asChild><Link href={`/dashboard/users/${row.userId}`}><Eye className="w-4 h-4 mr-2" />View Details</Link></DropdownMenuItem>
-      {row.status === "pending" && (
+      
+      {row.status === "pending" ? (
         <>
           <DropdownMenuItem className="text-green-600" onClick={() => handleUpdateStatus(row.userId, 'active')}><Check className="w-4 h-4 mr-2" />Approve</DropdownMenuItem>
           <DropdownMenuItem className="text-red-600" onClick={() => handleUpdateStatus(row.userId, 'revoked')}><X className="w-4 h-4 mr-2" />Reject</DropdownMenuItem>
         </>
+      ) : (
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger><UserCog className="w-4 h-4 mr-2" />Change Status</DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent>
+              {row.status !== 'active' && <DropdownMenuItem onClick={() => handleUpdateStatus(row.userId, 'active')}><CheckCircle className="w-4 h-4 mr-2 text-green-600" />Set Active</DropdownMenuItem>}
+              {row.status !== 'finished' && <DropdownMenuItem onClick={() => handleUpdateStatus(row.userId, 'finished')}><CheckCircle className="w-4 h-4 mr-2" />Set Finished</DropdownMenuItem>}
+              {row.status !== 'revoked' && <DropdownMenuItem onClick={() => handleUpdateStatus(row.userId, 'revoked')}><Ban className="w-4 h-4 mr-2 text-red-600" />Set Revoked</DropdownMenuItem>}
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
       )}
-      {row.status === "invited" && (
-        <>
-          <DropdownMenuItem>Resend Invite</DropdownMenuItem>
-          <DropdownMenuItem className="text-red-600">Revoke Invite</DropdownMenuItem>
-        </>
-      )}
-      {/* We will implement message modal later */}
-      <DropdownMenuItem><Mail className="w-4 h-4 mr-2" />Send Message</DropdownMenuItem>
+
+      <DropdownMenuItem onClick={() => handleOpenMessageModal([row])}>
+        <Mail className="w-4 h-4 mr-2" />Send Message
+      </DropdownMenuItem>
     </>
   );
 
@@ -244,7 +290,6 @@ export default function UserManagementPage() {
 
   return (
     <>
-      {/* ✨ --- RENDER THE MODAL --- ✨ */}
       <InviteUserModal 
         isOpen={isInviteModalOpen}
         onClose={() => setInviteModalOpen(false)}
@@ -252,12 +297,19 @@ export default function UserManagementPage() {
           queryClient.invalidateQueries({ queryKey: ['userManagement'] });
         }}
       />
+      <MessageUserModal
+        isOpen={isMessageModalOpen}
+        onClose={() => setMessageModalOpen(false)}
+        recipients={messageRecipients}
+      />
+
       <div className="p-6 space-y-6">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">
           <div><h1 className="text-2xl font-bold text-gray-900">User Management</h1><p className="text-gray-600 mt-1">Manage user registrations, approvals, and performance tracking</p></div>
-          {/* ✨ --- UPDATED INVITE BUTTON --- ✨ */}
           <div className="flex items-center gap-3">
-            <Button variant="outline">Export Users</Button>
+            <Button variant="outline" onClick={handleExport}>
+                <Download className="mr-2 h-4 w-4" /> Export Users
+            </Button>
             <Button onClick={() => setInviteModalOpen(true)}>
               <UserPlus className="mr-2 h-4 w-4" /> Invite Users
             </Button>
@@ -318,6 +370,8 @@ export default function UserManagementPage() {
             actions={{
               approve: { handler: handleBulkApprove, isLoading: userStatusMutation.isPending },
               reject: { handler: handleBulkReject, isLoading: userStatusMutation.isPending },
+              message: () => handleOpenMessageModal(selectedUsers),
+              export: handleExport,
             }}
             itemType="users"
           />
@@ -325,7 +379,9 @@ export default function UserManagementPage() {
 
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
           <Card>
-            <CardHeader><CardTitle>User Directory</CardTitle><CardDescription>Manage user registrations, approvals, and track learning performance</CardDescription></CardHeader>
+            <CardHeader><CardTitle>User Directory</CardTitle>
+              <CardDescription>Manage user registrations, approvals, and track learning performance</CardDescription>
+            </CardHeader>
             <CardContent>
               <DataTable
                 data={users}

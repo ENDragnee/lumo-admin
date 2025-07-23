@@ -15,6 +15,8 @@ import { Loader2, UserPlus, Send, RefreshCw, Trash2, Mail, UserCheck, XCircle } 
 import { useToast } from "@/components/ui/use-toast"
 import { BulkActionBar } from "@/components/bulk-action-bar"
 import { InviteUserModal } from "@/components/modals/invite-user-modal"
+import { MessageUserModal } from "@/components/modals/message-user-modal"
+import { options } from "pdfkit"
 
 // Type for a single invitation row in the data table
 interface InvitedUser {
@@ -86,6 +88,8 @@ const fetchInvitationData = async (): Promise<InvitationPageData> => {
 export default function InvitationManagementPage() {
   const [selectedInvites, setSelectedInvites] = useState<InvitedUser[]>([]);
   const [isInviteModalOpen, setInviteModalOpen] = useState(false);
+  const [isMessageModalOpen, setMessageModalOpen] = useState(false);
+  const [messageRecipients, setMessageRecipients] = useState<InvitedUser[]>([]);
   
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -121,11 +125,20 @@ export default function InvitationManagementPage() {
     });
   };
 
+  const handleOpenMessageModal = (users: InvitedUser[]) => {
+    if (users.length === 0) return;
+    setMessageRecipients(users);
+    setMessageModalOpen(true);
+  };
+
   const columns = [
     {
       key: "email",
       label: "Email",
       sortable: true,
+      filterConfig: {
+        type: 'alphabetical',
+      },
       render: (email: string) => <p className="font-medium text-gray-900">{email}</p>,
     },
     {
@@ -145,12 +158,19 @@ export default function InvitationManagementPage() {
       key: "sentDate",
       label: "Sent Date",
       sortable: true,
+      filterConfig: {
+        type: 'date',
+      },
       render: (sentDate: string) => <span className="text-gray-500">{formatDistanceToNow(new Date(sentDate), { addSuffix: true })}</span>,
     },
     {
       key: "status",
       label: "Status",
       sortable: true,
+      filterConfig: {
+        type: 'status',
+        options: ['accepted', 'pending', 'expired']
+      },
       render: (status: InvitedUser['status']) => {
         const variantMap = {
           accepted: 'default',
@@ -180,7 +200,7 @@ export default function InvitationManagementPage() {
           </DropdownMenuItem>
         </>
       )}
-       <DropdownMenuItem>
+       <DropdownMenuItem onClick={() => handleOpenMessageModal([row])}>
           <Mail className="w-4 h-4 mr-2" /> Contact User
       </DropdownMenuItem>
     </>
@@ -201,6 +221,12 @@ export default function InvitationManagementPage() {
         onSuccess={() => {
           queryClient.invalidateQueries({ queryKey: ['invitationPageData'] });
         }}
+      />
+
+      <MessageUserModal
+        isOpen={isMessageModalOpen}
+        onClose={() => setMessageModalOpen(false)}
+        recipients={messageRecipients}
       />
       <div className="p-6 space-y-6">
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-between">

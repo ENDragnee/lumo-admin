@@ -228,6 +228,12 @@ export const typeDefs = `#graphql
     invitations: [InvitationDetails!]!
   }
 
+  input UpdateUserStatusInput {
+    userId: ID!
+    # ✨ DOCS UPDATE: Now accepts more statuses
+    status: String! # e.g., "active", "revoked", "finished"
+  }
+
   type Query {
     me: User
     myInstitution: Institution

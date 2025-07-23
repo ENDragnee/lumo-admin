@@ -14,11 +14,18 @@ import { Plus, BookOpen, Users, TrendingUp, Edit, Trash2, Eye, Loader2, UploadCl
 import Link from "next/link"
 import { BulkActionBar } from "@/components/bulk-action-bar"
 
+
+type FilterType = {
+  type: "alphabetical" | "date" | "status",
+  options?: string[]
+}
+
 // Type for a single column, matching your DataTable component's interface
 interface Column {
   key: string;
   label: string;
   sortable?: boolean;
+  filterConfig?: FilterType; 
   render?: (value: any, row: ContentModule) => React.ReactNode;
 }
 
@@ -108,6 +115,9 @@ export default function ContentManagementPage() {
       key: "title",
       label: "Title",
       sortable: true,
+      filterConfig: {
+        type: 'alphabetical',
+      },
       render: (value: string, row: ContentModule) => (
         <div>
           <p className="font-medium text-gray-900">{value}</p>
@@ -119,17 +129,22 @@ export default function ContentManagementPage() {
       key: "status",
       label: "Status",
       sortable: true,
+      filterConfig: {
+        type: 'status',
+        options: ["Published", "Draft"]
+      },
       render: (value: string) => <Badge variant={value === "Published" ? "default" : "secondary"}>{value}</Badge>,
     },
     {
       key: "creationDate",
       label: "Creation Date",
       sortable: true,
-      // Note: This assumes creationDate is a standard date string. If it's a timestamp like the previous file, a similar fix would be needed.
+      filterConfig: {
+        type: 'date',
+      },
       render: (value: string) => {
           if (!value) return "-";
           try {
-              // Handle both timestamp strings and standard date strings
               const date = new Date(isNaN(Number(value)) ? value : Number(value));
               return new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(date);
           } catch {
